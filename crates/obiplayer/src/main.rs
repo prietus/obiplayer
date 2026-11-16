@@ -5,14 +5,18 @@ mod app;
 mod covers;
 mod ctx;
 mod lyrics_ui;
+mod mpris;
 mod nowplaying;
 mod pages;
 mod player_bar;
 mod queue;
+mod settings;
 mod signal_ui;
 mod tasks_ui;
+mod theme;
 mod ui;
 mod viz;
+mod wizard;
 
 use obiplayer_core::config::Config;
 use relm4::RelmApp;
@@ -125,8 +129,39 @@ fn main() {
     // Network I/O, cover decoding queues, etc.
     let _ = relm4::RELM_THREADS.set(2);
 
-    let config = Config::load();
+    let first_run = !Config::exists();
+    let config = Config::load_or_default();
     let app = RelmApp::new(APP_ID);
     relm4::set_global_css(CSS);
-    app.run::<app::App>(config);
+    let ui = config.ui.clone();
+    relm4::gtk::glib::idle_add_local_once(move || theme::apply(&ui));
+    app.run::<app::App>((config, first_run));
+
+    if RESTART.load(std::sync::atomic::Ordering::SeqCst) {
+        restart_process();
+    }
+}
+
+static RESTART: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Quit and start again (connection/API settings are read at startup).
+/// The new process starts only after this one has left the session bus, so
+/// GTK's single-instance logic doesn't hand it back to us.
+pub fn request_restart() {
+    RESTART.store(true, std::sync::atomic::Ordering::SeqCst);
+    use relm4::gtk::prelude::ApplicationExt;
+    relm4::main_application().quit();
+}
+
+fn restart_process() {
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let err = std::process::Command::new(exe).args(args).exec();
+        tracing::error!(error = %err, "restart failed");
+    }
 }

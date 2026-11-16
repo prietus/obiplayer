@@ -560,6 +560,9 @@ pub fn dr_compare_button(ctx: &Rc<Ctx>, artist: &str, album: &str, my_dr: i32) -
 /// manager (looked up dynamically so older versions still run); before that
 /// it was the `accent_color` named colour.
 pub fn accent_rgba(w: &impl IsA<gtk::Widget>) -> gtk::gdk::RGBA {
+    if let Some(c) = crate::theme::accent_override() {
+        return c;
+    }
     let sm = adw::StyleManager::default();
     if sm.find_property("accent-color-rgba").is_some() {
         return sm.property::<gtk::gdk::RGBA>("accent-color-rgba");

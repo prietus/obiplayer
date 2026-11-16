@@ -13,6 +13,25 @@ pub struct Config {
     pub mpd: MpdConfig,
     pub library: LibraryConfig,
     pub apis: ApiConfig,
+    pub ui: UiConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct UiConfig {
+    /// "System" (desktop accent), "Classic", "Warm", "Mono", "Vinyl".
+    pub theme: String,
+    /// "system", "light", "dark".
+    pub color_scheme: String,
+}
+
+impl Default for UiConfig {
+    fn default() -> Self {
+        UiConfig {
+            theme: "System".into(),
+            color_scheme: "system".into(),
+        }
+    }
 }
 
 /// Keys for online metadata services. Kept only in the user's config file.
@@ -79,6 +98,19 @@ impl Config {
                 cfg
             }
         }
+    }
+
+    /// True until a configuration has been saved (first run).
+    pub fn exists() -> bool {
+        Self::path().is_file()
+    }
+
+    /// Like `load`, but doesn't create the file (the setup wizard does).
+    pub fn load_or_default() -> Config {
+        std::fs::read_to_string(Self::path())
+            .ok()
+            .and_then(|t| toml::from_str(&t).ok())
+            .unwrap_or_default()
     }
 
     pub fn save(&self) -> std::io::Result<()> {

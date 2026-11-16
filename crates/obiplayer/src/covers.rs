@@ -128,6 +128,12 @@ impl CoverLoader {
     }
 }
 
+/// Cached thumbnail file for an album folder, if it exists (MPRIS art).
+pub fn thumb_path(folder: &str) -> Option<PathBuf> {
+    let (png, _) = disk_paths(folder);
+    png.is_file().then_some(png)
+}
+
 /// How long "this album has no cover" is remembered on disk.
 const NO_COVER_TTL: Duration = Duration::from_secs(24 * 3600);
 

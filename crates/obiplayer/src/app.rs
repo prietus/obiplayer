@@ -87,6 +87,7 @@ pub struct App {
     smart: Rc<crate::pages::smart::SmartView>,
     lyrics: Rc<crate::lyrics_ui::LyricsView>,
     lyrics_shown: bool,
+    mpris: crate::mpris::Mpris,
     tasks: crate::tasks_ui::TasksState,
     extra_genres: Rc<RefCell<HashMap<String, Vec<String>>>>,
     enrich_started: bool,
@@ -105,6 +106,8 @@ pub enum AppMsg {
     ShowLyrics(bool),
     /// Once a second: play counting.
     Tick,
+    /// Media keys / desktop widget (D-Bus MPRIS).
+    Mpris(crate::mpris::MprisCommand),
     /// Genre enrichment progress: (folder, new genres, done, total).
     Genres(String, Vec<String>, usize, usize),
     ReloadLibrary,
@@ -230,6 +233,16 @@ impl App {
         v.current = current;
         self.queue.remove(pos);
         self.queue.insert(pos, v);
+    }
+
+    fn push_mpris(&self) {
+        let art = self
+            .current_folder
+            .as_ref()
+            .and_then(|f| self.ctx.lib().album_by_folder(f).cloned())
+            .and_then(|a| crate::covers::thumb_path(&a.folder));
+        self.mpris
+            .update(&self.status, self.song.as_ref(), art.as_deref());
     }
 
     fn push_bar(&self) {
@@ -807,6 +820,61 @@ impl App {
     }
 }
 
+/// Primary menu: Preferences, setup assistant, About.
+fn main_menu(root: &adw::ApplicationWindow, ctx: &Rc<Ctx>) -> gtk::MenuButton {
+    let pop = gtk::Popover::new();
+    let col = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let item = |label: &str, f: Box<dyn Fn()>| {
+        let b = gtk::Button::builder()
+            .label(label)
+            .css_classes(["flat"])
+            .build();
+        if let Some(l) = b.child().and_downcast::<gtk::Label>() {
+            l.set_xalign(0.0);
+        }
+        let p = pop.clone();
+        b.connect_clicked(move |_| {
+            p.popdown();
+            f();
+        });
+        b
+    };
+    let (r, c) = (root.clone(), ctx.clone());
+    col.append(&item(
+        &tr("Preferences"),
+        Box::new(move || crate::settings::show(&r, &c)),
+    ));
+    let r = root.clone();
+    col.append(&item(
+        &tr("Setup assistant"),
+        Box::new(move || crate::wizard::show(&r)),
+    ));
+    let r = root.clone();
+    col.append(&item(
+        &tr("About ObiPlayer"),
+        Box::new(move || {
+            adw::AboutDialog::builder()
+                .application_name("ObiPlayer")
+                .application_icon(crate::APP_ID)
+                .version(env!("CARGO_PKG_VERSION"))
+                .comments(tr(
+                    "A music player for MPD, for people who care about editions, pressings and sound quality.",
+                ))
+                .license_type(gtk::License::Gpl30)
+                .website("https://github.com/prietus/obiplayer")
+                .developer_name("Carlos Prieto")
+                .build()
+                .present(Some(&r));
+        }),
+    ));
+    pop.set_child(Some(&col));
+    gtk::MenuButton::builder()
+        .icon_name("open-menu-symbolic")
+        .tooltip_text(tr("Main menu"))
+        .popover(&pop)
+        .build()
+}
+
 fn queue_panel(
     sender: &ComponentSender<App>,
     queue: &TypedListView<QueueItem, gtk::NoSelection>,
@@ -873,7 +941,7 @@ fn queue_panel(
 }
 
 impl Component for App {
-    type Init = Config;
+    type Init = (Config, bool);
     type Input = AppMsg;
     type Output = ();
     type CommandOutput = Cmd;
@@ -891,7 +959,7 @@ impl Component for App {
     }
 
     fn init(
-        config: Config,
+        (config, first_run): (Config, bool),
         root: adw::ApplicationWindow,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
@@ -1110,6 +1178,7 @@ impl Component for App {
             let s = sender.clone();
             reload.connect_clicked(move |_| s.input(AppMsg::ReloadLibrary));
         }
+        header.pack_end(&main_menu(&root, &ctx));
         header.pack_end(&reload);
         let count = gtk::Label::builder()
             .css_classes(["dim-label", "caption"])
@@ -1207,7 +1276,21 @@ impl Component for App {
                 })),
             ));
         }
+        {
+            let (r, c) = (root.clone(), ctx.clone());
+            shortcuts.add_shortcut(gtk::Shortcut::new(
+                gtk::ShortcutTrigger::parse_string("<Control>comma"),
+                Some(gtk::CallbackAction::new(move |_, _| {
+                    crate::settings::show(&r, &c);
+                    glib::Propagation::Stop
+                })),
+            ));
+        }
         root.add_controller(shortcuts);
+        if first_run {
+            let r = root.clone();
+            glib::idle_add_local_once(move || crate::wizard::show(&r));
+        }
         {
             let s = sender.clone();
             glib::timeout_add_seconds_local(1, move || {
@@ -1259,6 +1342,10 @@ impl Component for App {
             smart,
             lyrics,
             lyrics_shown: false,
+            mpris: {
+                let s = sender.clone();
+                crate::mpris::Mpris::start(move |cmd| s.input(AppMsg::Mpris(cmd)))
+            },
             tasks: Default::default(),
             extra_genres,
             enrich_started: false,
@@ -1379,6 +1466,39 @@ impl Component for App {
             }
             AppMsg::ClearQueue => self.run(&sender, |c| async move { c.clear().await }),
             AppMsg::Tick => self.count_play(&sender),
+            AppMsg::Mpris(cmd) => {
+                use crate::mpris::MprisCommand as M;
+                let st = self.status.clone();
+                match cmd {
+                    M::PlayPause => sender.input(AppMsg::Transport(Transport::TogglePause)),
+                    M::Play => self.run(&sender, move |c| async move {
+                        if st.state == PlayState::Pause {
+                            c.set_pause(false).await
+                        } else {
+                            c.play().await
+                        }
+                    }),
+                    M::Pause => self.run(&sender, |c| async move { c.set_pause(true).await }),
+                    M::Stop => sender.input(AppMsg::Transport(Transport::Stop)),
+                    M::Next => sender.input(AppMsg::Transport(Transport::Next)),
+                    M::Previous => sender.input(AppMsg::Transport(Transport::Previous)),
+                    M::Seek(delta) => {
+                        let clock = self.ctx.clock.get();
+                        let target = clock.now() + delta;
+                        if clock.duration > 0.0 && target >= clock.duration {
+                            sender.input(AppMsg::Transport(Transport::Next));
+                        } else {
+                            self.ctx.act(Action::Seek(target.max(0.0)));
+                        }
+                    }
+                    M::SetPosition(secs) => self.ctx.act(Action::Seek(secs)),
+                    M::Raise => {
+                        if let Some(w) = self.nav.root().and_downcast::<gtk::Window>() {
+                            w.present();
+                        }
+                    }
+                }
+            }
             AppMsg::Genres(folder, new, done, total) => {
                 if !new.is_empty() {
                     self.extra_genres
@@ -1456,6 +1576,11 @@ impl Component for App {
                 self.update_clock();
                 self.update_current();
                 self.push_bar();
+                self.push_mpris();
+                let jumped = old_file != self.song.as_ref().map(|s| s.file.clone());
+                if jumped {
+                    self.mpris.seeked(self.status.elapsed.unwrap_or(0.0));
+                }
                 self.push_signal();
                 let new_file = self.song.as_ref().map(|s| s.file.clone());
                 if ran_out {

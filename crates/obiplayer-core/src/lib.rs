@@ -17,4 +17,5 @@ pub mod radio;
 pub mod signal;
 pub mod smart;
 pub mod stats;
+pub mod system;
 pub mod text;
