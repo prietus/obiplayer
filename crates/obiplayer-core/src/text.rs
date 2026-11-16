@@ -50,6 +50,15 @@ pub fn capitalize_words(s: &str) -> String {
         .join(" ")
 }
 
+/// djb2 hash as lowercase hex — stable file names for cache entries
+/// (same scheme DrPlayer used).
+pub fn djb2_hex(s: &str) -> String {
+    let h = s
+        .bytes()
+        .fold(5381u64, |h, b| h.wrapping_mul(33).wrapping_add(b as u64));
+    format!("{h:x}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -64,6 +73,12 @@ mod tests {
         assert_eq!(compare("\"Heroes\"", "Highway"), Ordering::Less);
         assert_eq!(compare("...Llego El Dia", "Abbey Road"), Ordering::Greater);
         assert_eq!(sort_key("!!!"), "!!!");
+    }
+
+    #[test]
+    fn djb2() {
+        assert_eq!(djb2_hex(""), "1505");
+        assert_eq!(djb2_hex("a"), "2b606");
     }
 
     #[test]

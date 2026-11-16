@@ -10,11 +10,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Duration;
 
 use obiplayer_core::covers::find_cover;
 use obiplayer_core::library::Album;
 use obiplayer_core::mpd::Client;
-use relm4::gtk::{self, gdk, gdk_pixbuf, gio, glib};
+use obiplayer_core::{paths, text};
+use relm4::gtk::{self, gdk, gdk_pixbuf, gio, glib, prelude::TextureExt};
 use tokio::sync::Semaphore;
 
 /// Edge in pixels of decoded thumbnails (2× the grid cell for HiDPI).
@@ -46,9 +48,12 @@ impl CoverLoader {
         self.cache.borrow().get(folder).cloned()
     }
 
-    /// Forget a cached cover so the next request loads it again.
+    /// Forget a cached cover (memory and disk) so the next request loads it again.
     pub fn invalidate(&self, folder: &str) {
         self.cache.borrow_mut().remove(folder);
+        let (png, none) = disk_paths(folder);
+        let _ = std::fs::remove_file(png);
+        let _ = std::fs::remove_file(none);
     }
 
     /// Get the cover, calling `cb` on the main thread (immediately if cached).
@@ -76,21 +81,29 @@ impl CoverLoader {
         let first_file = album.first_file().map(str::to_owned);
         let limit = self.limit.clone();
         let this = Rc::clone(self);
+        let disk = disk_paths(&key);
         glib::spawn_future_local(async move {
-            let bytes = relm4::spawn(async move {
-                let _permit = limit.acquire_owned().await.ok()?;
-                fetch_bytes(client, local_dir, first_file).await
-            })
-            .await
-            .ok()
-            .flatten();
-
-            let texture = match bytes {
-                Some(b) => gio::spawn_blocking(move || decode(b, THUMB_SIZE))
+            let texture = match load_disk(disk.clone()).await {
+                DiskHit::Texture(t) => Some(t),
+                DiskHit::NoCover => None,
+                DiskHit::Miss => {
+                    let bytes = relm4::spawn(async move {
+                        let _permit = limit.acquire_owned().await.ok()?;
+                        fetch_bytes(client, local_dir, first_file).await
+                    })
                     .await
                     .ok()
-                    .flatten(),
-                None => None,
+                    .flatten();
+                    let texture = match bytes {
+                        Some(b) => gio::spawn_blocking(move || decode(b, THUMB_SIZE))
+                            .await
+                            .ok()
+                            .flatten(),
+                        None => None,
+                    };
+                    store_disk(disk, texture.clone());
+                    texture
+                }
             };
 
             this.cache.borrow_mut().insert(key.clone(), texture.clone());
@@ -100,6 +113,60 @@ impl CoverLoader {
             }
         });
     }
+}
+
+/// How long "this album has no cover" is remembered on disk.
+const NO_COVER_TTL: Duration = Duration::from_secs(24 * 3600);
+
+/// Thumbnail and "no cover" marker paths for an album folder.
+fn disk_paths(folder: &str) -> (PathBuf, PathBuf) {
+    let dir = paths::cache_dir().join("thumbs");
+    let key = text::djb2_hex(folder);
+    (
+        dir.join(format!("{key}.png")),
+        dir.join(format!("{key}.none")),
+    )
+}
+
+enum DiskHit {
+    Texture(gdk::Texture),
+    NoCover,
+    Miss,
+}
+
+async fn load_disk((png, none): (PathBuf, PathBuf)) -> DiskHit {
+    gio::spawn_blocking(move || {
+        if let Ok(t) = gdk::Texture::from_filename(&png) {
+            return DiskHit::Texture(t);
+        }
+        let fresh = std::fs::metadata(&none)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age < NO_COVER_TTL);
+        if fresh {
+            DiskHit::NoCover
+        } else {
+            DiskHit::Miss
+        }
+    })
+    .await
+    .unwrap_or(DiskHit::Miss)
+}
+
+fn store_disk((png, none): (PathBuf, PathBuf), texture: Option<gdk::Texture>) {
+    gio::spawn_blocking(move || {
+        if let Some(dir) = png.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let r = match texture {
+            Some(t) => std::fs::write(&png, t.save_to_png_bytes()),
+            None => std::fs::write(&none, b""),
+        };
+        if let Err(e) = r {
+            tracing::debug!(error = %e, "could not write thumbnail cache");
+        }
+    });
 }
 
 async fn fetch_bytes(

@@ -14,6 +14,7 @@ Port a Linux (Rust + GTK4/libadwaita) de DrPlayer (`~/drplayer`, SwiftUI + MPD),
 
 ## Pruebas
 - Servidor MPD real del usuario: `192.0.2.10:6600` (sonando en un DAC; usar solo órdenes de lectura salvo que pida otra cosa).
+- Probar con UNA instancia cada vez: GTK es de instancia única (una segunda se cede a la primera y sale), y lanzar muchas seguidas llegó a dejar colgado el MPD del servidor. Matar con `pkill -x obiplayer` (no `-f`: coincide con la propia orden ssh). `OBIPLAYER_ROUTE=album:<carpeta>|track:<fichero>|artist:<n>|label:<n>|composer:<n>|search:<q>|mode:<albums|artists|labels|tracks|composers>` abre esa vista al cargar (para capturas).
 - VM Linux: `ssh user@192.0.2.21` (Arch ARM, Wayland/river, `grim` para capturas). Copiar fuentes con `git ls-files -co --exclude-standard | tar -czf - -T - | ssh … 'tar -xzf - -C obiplayer'` (no hay rsync).
 
 ## Comandos

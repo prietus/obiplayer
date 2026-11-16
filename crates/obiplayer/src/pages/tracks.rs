@@ -163,7 +163,9 @@ impl TracksView {
             .placeholder_text(tr("Search tracks…"))
             .hexpand(true)
             .build();
-        let count = ui::label("", &["dim-label", "caption"]);
+        let count = gtk::Label::builder()
+            .css_classes(["dim-label", "caption"])
+            .build();
         {
             let (v, q, cnt) = (view.clone(), query.clone(), count.clone());
             entry.connect_search_changed(move |e| {

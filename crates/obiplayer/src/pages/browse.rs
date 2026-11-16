@@ -111,7 +111,9 @@ impl Browse {
             .placeholder_text(tr(placeholder))
             .hexpand(true)
             .build();
-        let count = ui::label("", &["dim-label", "caption"]);
+        let count = gtk::Label::builder()
+            .css_classes(["dim-label", "caption"])
+            .build();
         count.set_hexpand(false);
         {
             let (l, q, cnt) = (list.clone(), query.clone(), count.clone());

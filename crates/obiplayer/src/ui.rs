@@ -137,11 +137,25 @@ impl InfoGrid {
     }
 
     pub fn text(&mut self, key: &str, value: &str) {
+        self.text_impl(key, value, false);
+    }
+
+    /// Like `text`, but the value can be selected and copied.
+    pub fn copyable(&mut self, key: &str, value: &str) {
+        self.text_impl(key, value, true);
+    }
+
+    fn text_impl(&mut self, key: &str, value: &str, copyable: bool) {
         if value.is_empty() {
             return;
         }
         let v = label(value, &[]);
-        v.set_selectable(true);
+        if copyable {
+            v.set_selectable(true);
+            // Selectable labels grab focus when the page opens and show
+            // their text selected; keep them mouse-only.
+            v.set_focusable(false);
+        }
         // Without a minimum width a wrapping label measures as one word per
         // line, inflating the grid's minimum height.
         v.set_width_chars(24);

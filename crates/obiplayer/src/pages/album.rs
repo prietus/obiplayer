@@ -190,6 +190,7 @@ fn info_grid(ctx: &Rc<Ctx>, a: &Album) -> InfoGrid {
     if let Some(cat) = &a.catalog_number {
         let v = ui::label(cat, &["monospace"]);
         v.set_selectable(true);
+        v.set_focusable(false);
         g.widget("Catalog", &v);
     }
     if let Some(cc) = a.country.clone().filter(|c| !c.is_empty()) {

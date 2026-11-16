@@ -214,10 +214,19 @@ fn fill_tech(container: &gtk::Box, song: &Song, probe: Option<&Probe>) {
         container.append(&ui::heading(&tr("Audio")));
         container.append(&audio.grid);
     }
+    if probe.is_none() && song.format.is_none() {
+        container.append(&ui::label(
+            &tr(
+                "Set library.music_dir in the configuration (local path or mount of MPD's music \
+                 directory) to see codec, sample rate and bit depth.",
+            ),
+            &["dim-label", "caption"],
+        ));
+    }
 
     // File
     let mut file = InfoGrid::new();
-    file.text("Path", &song.file);
+    file.copyable("Path", &song.file);
     if let Some(p) = probe {
         file.text("Container", &p.format_name);
         if let Some(s) = p.size {
@@ -245,7 +254,7 @@ fn fill_tech(container: &gtk::Box, song: &Song, probe: Option<&Probe>) {
     if !tags.is_empty() {
         let mut g = InfoGrid::new();
         for (k, v) in &tags {
-            g.text(k, v);
+            g.copyable(k, v);
         }
         container.append(&ui::heading(&tr("Tags")));
         container.append(&g.grid);
