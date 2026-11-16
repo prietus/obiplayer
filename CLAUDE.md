@@ -13,10 +13,10 @@ Port a Linux (Rust + GTK4/libadwaita) de DrPlayer (`~/drplayer`, SwiftUI + MPD),
 `~/.config/obiplayer/config.toml` (se crea con valores por defecto): `[mpd] host/port/password`, `[library] music_dir` (ruta local de la biblioteca; si falta, las portadas se piden a MPD), `[apis] lastfm_api_key/discogs_key/discogs_secret` (el fichero se guarda con permisos 600; nunca imprimir ni registrar las claves). `MPD_HOST`/`MPD_PORT` tienen prioridad.
 
 ## Pruebas
-- Servidor MPD real del usuario: `192.0.2.10:6600` (sonando en un DAC; usar solo órdenes de lectura salvo que pida otra cosa).
+- Entorno de pruebas (servidor MPD real del usuario y VM Linux): ver `CLAUDE.local.md` (no versionado). El servidor real está sonando en un DAC: solo órdenes de lectura salvo que el usuario pida otra cosa.
 - Probar con UNA instancia cada vez: GTK es de instancia única (una segunda se cede a la primera y sale), y lanzar muchas seguidas llegó a dejar colgado el MPD del servidor. El usuario puede tener ObiPlayer instalado y abierto en la VM: NO usar `pkill -x obiplayer`; lanzar la instancia de prueba en segundo plano, guardar su PID (`$!`) y matar solo ese PID. `OBIPLAYER_ROUTE=album:<carpeta>|track:<fichero>|artist:<n>|label:<n>|composer:<n>|search:<q>|mode:<albums|artists|labels|tracks|composers>|nowplaying:<art|viz|lyrics>|osc:` abre esa vista al cargar (para capturas). En pruebas usar siempre `OBIPLAYER_NO_COUNT=1` (no contar reproducciones en los stickers del servidor real).
 - No usar `screencapture` en el Mac (pide permiso de Grabación de pantalla y captura el escritorio del usuario): las capturas, en la VM.
-- VM Linux: `ssh user@192.0.2.20` (Arch ARM, red en modo bridge, Wayland/river, `grim` para capturas; biblioteca montada en `/mnt/music` con `sudo mount -t nfs -o vers=3,ro 192.0.2.10:/mnt/music /mnt/music`, `music_dir = "/mnt/music"`). Copiar fuentes con `git ls-files -co --exclude-standard | tar -czf - -T - | ssh … 'tar -xzf - -C obiplayer'` (no hay rsync).
+- VM Linux de pruebas: Arch ARM, Wayland/river, `grim` para capturas; biblioteca montada por NFS v3 en `/mnt/music`. Copiar fuentes con `git ls-files -co --exclude-standard | tar -czf - -T - | ssh … 'tar -xzf - -C obiplayer'` (no hay rsync).
 
 ## Comandos
 ```
