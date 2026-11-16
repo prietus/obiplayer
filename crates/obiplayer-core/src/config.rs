@@ -12,6 +12,16 @@ use crate::mpd::ConnectConfig;
 pub struct Config {
     pub mpd: MpdConfig,
     pub library: LibraryConfig,
+    pub apis: ApiConfig,
+}
+
+/// Keys for online metadata services. Kept only in the user's config file.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ApiConfig {
+    pub lastfm_api_key: String,
+    pub discogs_key: String,
+    pub discogs_secret: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -80,7 +90,14 @@ impl Config {
             std::fs::create_dir_all(dir)?;
         }
         let body = toml::to_string_pretty(self).map_err(std::io::Error::other)?;
-        std::fs::write(path, format!("{TEMPLATE_HEADER}\n{body}"))
+        std::fs::write(path, format!("{TEMPLATE_HEADER}\n{body}"))?;
+        // The file can hold API keys and the MPD password.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+        }
+        Ok(())
     }
 
     /// Connection settings, with `MPD_HOST`/`MPD_PORT` taking precedence.
