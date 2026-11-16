@@ -429,7 +429,7 @@ fn more_menu(ctx: &Rc<Ctx>, a: &Album) -> gtk::MenuButton {
 
 /// Cover, or a carousel of every local image when there are several.
 fn artwork(ctx: &Rc<Ctx>, a: &Album) -> gtk::Widget {
-    let size = 240;
+    let size = 340;
     let Some(dir) = ctx.local_path(&a.folder) else {
         return ui::cover(ctx, a, size).upcast();
     };
@@ -472,7 +472,7 @@ fn artwork(ctx: &Rc<Ctx>, a: &Album) -> gtk::Widget {
             car.append(&pic);
             let p = pic.clone();
             relm4::spawn_local(async move {
-                if let Some(t) = load_file_texture(path, 600).await {
+                if let Some(t) = load_file_texture(path, 800).await {
                     p.set_paintable(Some(&t));
                 }
             });
