@@ -6,6 +6,7 @@ pub mod catalog;
 pub mod config;
 pub mod covers;
 pub mod library;
+pub mod meta;
 pub mod mpd;
 pub mod paths;
 pub mod probe;
