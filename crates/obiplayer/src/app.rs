@@ -1,14 +1,18 @@
 //! Main window: library browser, navigation stack, queue and player bar.
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 use std::sync::Arc;
 
+use obiplayer_core::analysis::{self, dr14, waveform};
 use obiplayer_core::catalog::Library;
 use obiplayer_core::config::Config;
 use obiplayer_core::library::{self, Album};
-use obiplayer_core::mpd::{self, Client, Event, PlayState, Single, Song, Status, Subsystem};
+use obiplayer_core::mpd::{
+    self, Client, Event, Output, PlayState, Single, Song, Status, Subsystem,
+};
+use obiplayer_core::signal;
 use relm4::adw::{self, prelude::*};
 use relm4::gtk::{self, gio, glib};
 use relm4::typed_view::grid::TypedGridView;
@@ -18,6 +22,7 @@ use relm4::{Component, ComponentController, ComponentParts, ComponentSender, Con
 use crate::albums::AlbumItem;
 use crate::covers::CoverLoader;
 use crate::ctx::{Action, AlbumFilter, Ctx, Route};
+use crate::nowplaying::NowPlaying;
 use crate::pages::album::AlbumPage;
 use crate::pages::browse::Browse;
 use crate::pages::group::{GroupPage, Kind};
@@ -28,6 +33,7 @@ use crate::pages::{self, Page};
 use crate::player_bar::{BarInput, BarOutput, PlayerBar, Transport};
 use crate::queue::QueueItem;
 use crate::tr;
+use crate::viz::{VIZ_RATE, Visualizer, VizMode};
 
 const ROOT_TAG: &str = "library";
 
@@ -53,6 +59,14 @@ pub struct App {
     queue_version: Option<u32>,
     queue_shown: bool,
     bar: Controller<PlayerBar>,
+    outputs: Vec<Output>,
+    replay_gain: String,
+    dr_queue: VecDeque<String>,
+    dr_busy: bool,
+    viz_shown: bool,
+    np_shown: bool,
+    nowplaying: Rc<NowPlaying>,
+    window_stack: gtk::Stack,
     toasts: adw::ToastOverlay,
     nav: adw::NavigationView,
     modes: adw::ViewStack,
@@ -70,6 +84,7 @@ pub enum AppMsg {
     RemoveQueuePos(u32),
     ClearQueue,
     ShowQueue(bool),
+    ShowViz(bool),
     ReloadLibrary,
     ShowCurrentAlbum,
     ClearFilter,
@@ -86,6 +101,11 @@ pub enum Cmd {
     Preferred(HashSet<String>),
     PreferredSet(String, Vec<String>, Result<(), String>),
     Done(Result<(), String>),
+    Outputs(Vec<Output>, String),
+    DrPrefill(HashMap<String, i32>),
+    DrDone(String, Option<i32>),
+    Peaks(String, Option<Vec<f32>>),
+    Samples(String, Option<Vec<f32>>),
 }
 
 pub struct AppWidgets {
@@ -98,6 +118,7 @@ pub struct AppWidgets {
     filter_label: gtk::Label,
     queue_revealer: gtk::Revealer,
     queue_count: gtk::Label,
+    osc_revealer: gtk::Revealer,
 }
 
 fn err(e: mpd::Error) -> String {
@@ -221,6 +242,128 @@ impl App {
         }
     }
 
+    fn root(&self) -> adw::ApplicationWindow {
+        self.window_stack
+            .root()
+            .and_downcast::<adw::ApplicationWindow>()
+            .expect("window")
+    }
+
+    fn refresh_signal(&self, sender: &ComponentSender<Self>) {
+        let c = self.client.clone();
+        sender.oneshot_command(async move {
+            let outs = c.outputs().await.unwrap_or_default();
+            let rg = c.replay_gain_mode().await.unwrap_or_else(|_| "off".into());
+            Cmd::Outputs(outs, rg)
+        });
+    }
+
+    fn push_signal(&self) {
+        let path = self.connected.then(|| {
+            Box::new(signal::evaluate(
+                &self.status,
+                &self.outputs,
+                &self.replay_gain,
+            ))
+        });
+        self.bar.emit(BarInput::Signal(path, self.connected));
+    }
+
+    /// Queue DR analysis of `files` (front = higher priority).
+    fn queue_dr(&mut self, sender: &ComponentSender<Self>, files: Vec<String>, front: bool) {
+        if self.ctx.music_dir.is_none() {
+            return;
+        }
+        let known = self.ctx.dr.borrow();
+        let todo: Vec<String> = files
+            .into_iter()
+            .filter(|f| !known.contains_key(f) && !self.dr_queue.contains(f))
+            .collect();
+        drop(known);
+        if front {
+            for f in todo.into_iter().rev() {
+                self.dr_queue.push_front(f);
+            }
+        } else {
+            self.dr_queue.extend(todo);
+        }
+        self.next_dr(sender);
+    }
+
+    fn next_dr(&mut self, sender: &ComponentSender<Self>) {
+        if self.dr_busy {
+            return;
+        }
+        let Some(file) = self.dr_queue.pop_front() else {
+            return;
+        };
+        let Some(path) = self.ctx.local_path(&file) else {
+            return;
+        };
+        self.dr_busy = true;
+        sender.spawn_oneshot_command(move || {
+            let d = dr14::analyze(&file, &path).map(|d| d.dr);
+            Cmd::DrDone(file, d)
+        });
+    }
+
+    /// Waveform + (if a visualizer is visible) samples for the current track.
+    fn load_track_media(&self, sender: &ComponentSender<Self>) {
+        let Some(file) = self.song.as_ref().map(|s| s.file.clone()) else {
+            self.bar.emit(BarInput::Peaks(None));
+            self.nowplaying.waveform.set_peaks(None);
+            return;
+        };
+        let Some(path) = self.ctx.local_path(&file) else {
+            return;
+        };
+        {
+            let (f, p) = (file.clone(), path.clone());
+            sender.spawn_oneshot_command(move || {
+                let peaks = waveform::generate(&f, &p);
+                Cmd::Peaks(f, peaks)
+            });
+        }
+        self.load_samples(sender);
+    }
+
+    fn load_samples(&self, sender: &ComponentSender<Self>) {
+        if !(self.viz_shown || self.np_shown) {
+            return;
+        }
+        let Some(file) = self.song.as_ref().map(|s| s.file.clone()) else {
+            return;
+        };
+        if self.ctx.samples.borrow().file.as_deref() == Some(file.as_str()) {
+            return;
+        }
+        let Some(path) = self.ctx.local_path(&file) else {
+            return;
+        };
+        // Mark as loading so repeated calls don't decode twice.
+        {
+            let mut s = self.ctx.samples.borrow_mut();
+            s.file = Some(file.clone());
+            s.data = None;
+        }
+        sender.spawn_oneshot_command(move || {
+            let data = std::fs::canonicalize(&path)
+                .ok()
+                .and_then(|p| analysis::decode_f32(&p, VIZ_RATE));
+            Cmd::Samples(file, data)
+        });
+    }
+
+    fn update_clock(&self) {
+        let st = &self.status;
+        self.ctx.clock.set(crate::ctx::Clock {
+            elapsed: st.elapsed.unwrap_or(0.0),
+            duration: st.duration.unwrap_or(0.0),
+            playing: st.state == PlayState::Play,
+            at: std::time::Instant::now(),
+        });
+    }
+
     fn refresh_pages(&self) {
         for p in &self.pages {
             p.refresh();
@@ -248,6 +391,10 @@ impl App {
         let page: Option<Box<dyn Page>> = match &route {
             Route::Album(f) => {
                 self.load_ratings(sender, f.clone());
+                if let Some(a) = self.ctx.lib().album_by_folder(f) {
+                    let files = a.tracks.iter().map(|t| t.file.clone()).collect();
+                    self.queue_dr(sender, files, true);
+                }
                 AlbumPage::new(&self.ctx, f).map(|p| Box::new(p) as _)
             }
             Route::Track(f) => {
@@ -273,7 +420,8 @@ impl App {
     }
 
     /// Development aid: `OBIPLAYER_ROUTE=album:<folder>|track:<file>|artist:<name>|
-    /// label:<name>|composer:<name>|search:<query>|mode:<albums|artists|…>`
+    /// label:<name>|composer:<name>|search:<query>|mode:<albums|artists|…>|
+    /// nowplaying:<art|viz>|osc:`
     /// opens that view once the library has loaded (used for screenshots).
     fn open_debug_route(&mut self, sender: &ComponentSender<Self>) {
         let Ok(spec) = std::env::var("OBIPLAYER_ROUTE") else {
@@ -292,6 +440,17 @@ impl App {
             "search" => Route::Search(arg),
             "mode" => {
                 self.modes.set_visible_child_name(&arg);
+                return;
+            }
+            "nowplaying" => {
+                self.act(Action::ShowNowPlaying(true), sender, &self.root());
+                if arg == "viz" {
+                    self.nowplaying.show_visualizer();
+                }
+                return;
+            }
+            "osc" => {
+                sender.input(AppMsg::ShowViz(true));
                 return;
             }
             _ => return,
@@ -419,6 +578,28 @@ impl App {
                 self.rebind_album(&folder, None);
                 self.push_bar();
             }
+            Action::Transport(t) => sender.input(AppMsg::Transport(t)),
+            Action::Seek(secs) => {
+                let mut c = self.ctx.clock.get();
+                c.elapsed = secs;
+                c.at = std::time::Instant::now();
+                self.ctx.clock.set(c);
+                self.run(sender, move |c| async move { c.seek_current(secs).await });
+            }
+            Action::ShowNowPlaying(show) => {
+                self.np_shown = show;
+                self.window_stack
+                    .set_visible_child_name(if show { "nowplaying" } else { "main" });
+                if show {
+                    let album = self
+                        .current_folder
+                        .as_ref()
+                        .and_then(|f| self.ctx.lib().album_by_folder(f).cloned());
+                    self.nowplaying
+                        .update(&self.status, self.song.as_ref(), album.as_ref());
+                    self.load_samples(sender);
+                }
+            }
             Action::OpenFolder(folder) => {
                 if let Some(p) = self.ctx.local_path(&folder) {
                     let launcher = gtk::FileLauncher::new(Some(&gio::File::for_path(p)));
@@ -532,10 +713,11 @@ impl Component for App {
         );
 
         let bar = PlayerBar::builder()
-            .launch(covers.clone())
+            .launch(ctx.clone())
             .forward(sender.input_sender(), |o| match o {
                 BarOutput::Transport(t) => AppMsg::Transport(t),
                 BarOutput::ShowQueue(v) => AppMsg::ShowQueue(v),
+                BarOutput::ShowViz(v) => AppMsg::ShowViz(v),
                 BarOutput::OpenCurrentAlbum => AppMsg::ShowCurrentAlbum,
             });
 
@@ -716,11 +898,28 @@ impl Component for App {
         body.append(&queue_revealer);
         let toasts = adw::ToastOverlay::new();
         toasts.set_child(Some(&body));
+        // Oscilloscope strip above the bar.
+        let osc = Visualizer::new(&ctx, VizMode::Oscilloscope);
+        osc.area.set_height_request(120);
+        let osc_revealer = gtk::Revealer::builder()
+            .transition_type(gtk::RevealerTransitionType::SlideUp)
+            .child(&osc.area)
+            .build();
+        let bottom = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        bottom.append(&osc_revealer);
+        bottom.append(bar.widget());
         let window_tv = adw::ToolbarView::new();
         window_tv.set_content(Some(&toasts));
-        window_tv.add_bottom_bar(bar.widget());
+        window_tv.add_bottom_bar(&bottom);
         window_tv.set_bottom_bar_style(adw::ToolbarStyle::RaisedBorder);
-        root.set_content(Some(&window_tv));
+
+        let nowplaying = NowPlaying::new(&ctx);
+        let window_stack = gtk::Stack::builder()
+            .transition_type(gtk::StackTransitionType::SlideUpDown)
+            .build();
+        window_stack.add_named(&window_tv, Some("main"));
+        window_stack.add_named(&nowplaying.root, Some("nowplaying"));
+        root.set_content(Some(&window_stack));
 
         // Ctrl+F: search
         let shortcuts = gtk::ShortcutController::new();
@@ -732,6 +931,20 @@ impl Component for App {
                 Some(gtk::CallbackAction::new(move |_, _| {
                     c.act(Action::Open(Route::Search(String::new())));
                     glib::Propagation::Stop
+                })),
+            ));
+        }
+        {
+            let (c, st) = (ctx.clone(), window_stack.clone());
+            shortcuts.add_shortcut(gtk::Shortcut::new(
+                gtk::ShortcutTrigger::parse_string("Escape"),
+                Some(gtk::CallbackAction::new(move |_, _| {
+                    if st.visible_child_name().as_deref() == Some("nowplaying") {
+                        c.act(Action::ShowNowPlaying(false));
+                        glib::Propagation::Stop
+                    } else {
+                        glib::Propagation::Proceed
+                    }
                 })),
             ));
         }
@@ -770,6 +983,14 @@ impl Component for App {
             pages: Vec::new(),
             browse,
             tracks,
+            outputs: Vec::new(),
+            replay_gain: "off".into(),
+            dr_queue: VecDeque::new(),
+            dr_busy: false,
+            viz_shown: false,
+            np_shown: false,
+            nowplaying,
+            window_stack,
         };
         let widgets = AppWidgets {
             count,
@@ -781,6 +1002,7 @@ impl Component for App {
             filter_label,
             queue_revealer,
             queue_count,
+            osc_revealer,
         };
         ComponentParts { model, widgets }
     }
@@ -793,6 +1015,7 @@ impl Component for App {
                 self.disconnect_reason = None;
                 self.queue_version = None;
                 self.refresh_status(&sender);
+                self.refresh_signal(&sender);
                 if self.library != LibraryState::Loaded {
                     self.load_library(&sender);
                 }
@@ -808,10 +1031,19 @@ impl Component for App {
                 if subs.contains(&Subsystem::Sticker) {
                     self.load_preferred(&sender);
                 }
+                if subs
+                    .iter()
+                    .any(|s| matches!(s, Subsystem::Output | Subsystem::Options))
+                {
+                    self.refresh_signal(&sender);
+                }
                 if subs.iter().any(|s| {
                     matches!(
                         s,
-                        Subsystem::Player | Subsystem::Playlist | Subsystem::Options
+                        Subsystem::Player
+                            | Subsystem::Playlist
+                            | Subsystem::Options
+                            | Subsystem::Mixer
                     )
                 }) {
                     self.refresh_status(&sender);
@@ -861,6 +1093,11 @@ impl Component for App {
                 self.run(&sender, move |c| async move { c.delete_pos(pos).await })
             }
             AppMsg::ClearQueue => self.run(&sender, |c| async move { c.clear().await }),
+            AppMsg::ShowViz(v) => {
+                self.viz_shown = v;
+                self.bar.emit(BarInput::VizShown(v));
+                self.load_samples(&sender);
+            }
             AppMsg::ShowQueue(v) => {
                 self.queue_shown = v;
                 self.bar.emit(BarInput::QueueShown(v));
@@ -892,6 +1129,7 @@ impl Component for App {
         match msg {
             Cmd::Status(Ok((status, song))) => {
                 let old_pos = self.status.song_pos;
+                let old_file = self.song.as_ref().map(|s| s.file.clone());
                 self.status = *status;
                 self.song = song.map(|s| *s);
                 if self.queue_version != Some(self.status.playlist_version) {
@@ -900,8 +1138,25 @@ impl Component for App {
                     self.set_queue_current(old_pos, false);
                     self.set_queue_current(self.status.song_pos, true);
                 }
+                self.update_clock();
                 self.update_current();
                 self.push_bar();
+                self.push_signal();
+                let new_file = self.song.as_ref().map(|s| s.file.clone());
+                if new_file != old_file {
+                    if let Some(f) = new_file {
+                        self.queue_dr(&sender, vec![f], true);
+                    }
+                    self.load_track_media(&sender);
+                }
+                if self.np_shown {
+                    let album = self
+                        .current_folder
+                        .as_ref()
+                        .and_then(|f| self.ctx.lib().album_by_folder(f).cloned());
+                    self.nowplaying
+                        .update(&self.status, self.song.as_ref(), album.as_ref());
+                }
             }
             Cmd::Status(Err(e)) => tracing::warn!(error = %e, "status failed"),
             Cmd::Queue(version, Ok(songs)) => {
@@ -945,6 +1200,21 @@ impl Component for App {
                     b.reload(&self.ctx);
                 }
                 self.tracks.reload(&self.ctx);
+                {
+                    let files: Vec<String> = lib
+                        .albums
+                        .iter()
+                        .flat_map(|a| a.tracks.iter().map(|t| t.file.clone()))
+                        .collect();
+                    sender.spawn_oneshot_command(move || {
+                        Cmd::DrPrefill(
+                            files
+                                .into_iter()
+                                .filter_map(|f| dr14::cached(&f).map(|d| (f, d.dr)))
+                                .collect(),
+                        )
+                    });
+                }
                 self.load_preferred(&sender);
                 self.update_current();
                 self.push_bar();
@@ -984,6 +1254,41 @@ impl Component for App {
                 Err(e) => self.toast(&e),
             },
             Cmd::Done(Ok(())) => {}
+            Cmd::Outputs(outs, rg) => {
+                self.outputs = outs;
+                self.replay_gain = rg;
+                self.push_signal();
+            }
+            Cmd::DrPrefill(map) => {
+                self.ctx.dr.borrow_mut().extend(map);
+                self.tracks.reload(&self.ctx);
+                self.refresh_pages();
+                self.bar.emit(BarInput::Refresh);
+            }
+            Cmd::DrDone(file, dr) => {
+                self.dr_busy = false;
+                if let Some(d) = dr {
+                    self.ctx.dr.borrow_mut().insert(file.clone(), d);
+                    self.refresh_pages();
+                    if self.ctx.is_current(&file) {
+                        self.bar.emit(BarInput::Refresh);
+                    }
+                }
+                self.next_dr(&sender);
+            }
+            Cmd::Peaks(file, peaks) => {
+                if self.ctx.is_current(&file) {
+                    let p = peaks.map(Arc::new);
+                    self.nowplaying.waveform.set_peaks(p.clone());
+                    self.bar.emit(BarInput::Peaks(p));
+                }
+            }
+            Cmd::Samples(file, data) => {
+                let mut s = self.ctx.samples.borrow_mut();
+                if s.file.as_deref() == Some(file.as_str()) {
+                    s.data = data.map(Arc::new);
+                }
+            }
             Cmd::Done(Err(e)) => self.toast(&e),
         }
     }
@@ -1044,6 +1349,7 @@ impl Component for App {
         }
 
         w.queue_revealer.set_reveal_child(self.queue_shown);
+        w.osc_revealer.set_reveal_child(self.viz_shown);
         w.queue_count
             .set_label(&format!("{} {}", self.queue.len(), tr("tracks")));
     }

@@ -307,8 +307,14 @@ pub fn page(title: &str, tag: &str, body: &impl IsA<gtk::Widget>) -> adw::Naviga
         .tightening_threshold(900)
         .child(body)
         .build();
-    let scroll = gtk::ScrolledWindow::builder()
+    // Pages rebuild rows when data arrives (DR, ratings); don't let the
+    // focus moving to a new widget scroll the page.
+    let viewport = gtk::Viewport::builder()
         .child(&clamp)
+        .scroll_to_focus(false)
+        .build();
+    let scroll = gtk::ScrolledWindow::builder()
+        .child(&viewport)
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vexpand(true)
         .build();
@@ -336,4 +342,29 @@ pub fn clear(b: &gtk::Box) {
     while let Some(c) = b.first_child() {
         b.remove(&c);
     }
+}
+
+/// "DRn" pill in DrPlayer's colour bands.
+pub fn dr_badge(dr: i32) -> gtk::Label {
+    let l = badge(&format!("DR{dr}"), crate::player_bar::dr_class(dr));
+    l.set_width_chars(4);
+    l.set_tooltip_text(Some(&tr("Dynamic range (DR14)")));
+    l
+}
+
+/// Horizontal bar filled to DR/20.
+pub fn dr_bar(dr: i32, width: i32) -> gtk::LevelBar {
+    let b = gtk::LevelBar::builder()
+        .min_value(0.0)
+        .max_value(20.0)
+        .value((dr as f64).clamp(0.0, 20.0))
+        .width_request(width)
+        .valign(gtk::Align::Center)
+        .css_classes(["dr-bar", crate::player_bar::dr_class(dr)])
+        .build();
+    // Drop the default low/high/full offsets: colour comes from our class.
+    for o in ["low", "high", "full"] {
+        b.remove_offset_value(Some(o));
+    }
+    b
 }

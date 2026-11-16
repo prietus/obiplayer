@@ -23,6 +23,7 @@ pub struct AlbumPage {
     album: Arc<Album>,
     album_index: u32,
     tracks: gtk::ListBox,
+    dr_box: gtk::Box,
 }
 
 impl AlbumPage {
@@ -76,7 +77,8 @@ impl AlbumPage {
         actions.append(&enqueue);
         actions.append(&more_menu(ctx, &album));
         left.append(&actions);
-        left.append(&info_grid(ctx, &album).grid);
+        let dr_box = ui::hbox(8);
+        left.append(&info_grid(ctx, &album, &dr_box).grid);
 
         let header = ui::hbox(24);
         header.append(&left);
@@ -135,6 +137,7 @@ impl AlbumPage {
             album,
             album_index,
             tracks,
+            dr_box,
         };
         page.refresh();
         Some(page)
@@ -151,6 +154,21 @@ impl Page for AlbumPage {
     }
 
     fn refresh(&self) {
+        ui::clear(&self.dr_box);
+        match self.ctx.album_dr(&self.album) {
+            Some(d) => {
+                self.dr_box.append(&ui::dr_badge(d));
+                self.dr_box.append(&ui::dr_bar(d, 60));
+            }
+            None => self.dr_box.append(&ui::label(
+                &if self.ctx.music_dir.is_some() {
+                    tr("Analysing…")
+                } else {
+                    tr("Needs local files (music_dir)")
+                },
+                &["dim-label", "caption"],
+            )),
+        }
         self.tracks.remove_all();
         for i in 0..self.album.tracks.len() {
             let r = TrackRef {
@@ -163,10 +181,11 @@ impl Page for AlbumPage {
     }
 }
 
-fn info_grid(ctx: &Rc<Ctx>, a: &Album) -> InfoGrid {
+fn info_grid(ctx: &Rc<Ctx>, a: &Album, dr_box: &gtk::Box) -> InfoGrid {
     let mut g = InfoGrid::new();
     g.text("Duration", &a.formatted_duration());
     g.text("Tracks", &a.tracks.len().to_string());
+    g.widget("Dynamic Range", dr_box);
     let fmt = a.format();
     if !fmt.is_empty() {
         let (c, f) = (ctx.clone(), fmt.clone());
@@ -446,6 +465,15 @@ pub fn track_row(ctx: &Rc<Ctx>, r: TrackRef, album_artist: &str) -> gtk::Box {
         "Add to queue",
         move || c.act(Action::EnqueueFile(f.clone())),
     ));
+    match ctx.dr(&song.file) {
+        Some(d) => row.append(&ui::dr_badge(d)),
+        None => row.append(
+            &gtk::Label::builder()
+                .width_chars(4)
+                .css_classes(["badge"])
+                .build(),
+        ),
+    }
     row.append(&ui::stars(ctx, &song.file));
     row.append(
         &gtk::Label::builder()
@@ -464,7 +492,7 @@ fn versions_popover(ctx: &Rc<Ctx>, r: TrackRef, pop: &gtk::Popover) -> gtk::Widg
     let refs = lib.versions(r).to_vec();
     let items: Vec<(Option<i32>, String)> = refs
         .iter()
-        .map(|v| (None, lib.album(v.album).format()))
+        .map(|v| (ctx.dr(&lib.song(*v).file), lib.album(v.album).format()))
         .collect();
     let ranked = quality::rank(
         &items
@@ -531,6 +559,10 @@ fn versions_popover(ctx: &Rc<Ctx>, r: TrackRef, pop: &gtk::Popover) -> gtk::Widg
         row.append(&ui::format_badge(&a.format()));
         if let Some(d) = &a.date {
             row.append(&ui::label(d, &["dim-label", "caption"]));
+        }
+        match ctx.dr(&s.file) {
+            Some(d) => row.append(&ui::dr_badge(d)),
+            None => row.append(&ui::label("DR?", &["dim-label", "caption"])),
         }
         row.append(&ui::label(
             &format!("{}pts", score.total),

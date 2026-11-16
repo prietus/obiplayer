@@ -1,15 +1,21 @@
-//! Now-playing bar: cover, track info, audio format, progress and transport.
+//! Player bar: cover, track info, audio format/DR, waveform seek bar,
+//! transport, signal path and panel toggles.
 
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::sync::Arc;
+use std::time::Duration;
 
 use obiplayer_core::library::Album;
 use obiplayer_core::mpd::{PlayState, Single, Song, Status};
+use obiplayer_core::signal::SignalPath;
 use relm4::gtk::{self, glib, prelude::*};
-use relm4::{ComponentParts, ComponentSender, SimpleComponent};
+use relm4::{Component, ComponentParts, ComponentSender};
 
-use crate::covers::CoverLoader;
+use crate::ctx::{Action, Ctx};
+use crate::signal_ui::SignalIndicator;
 use crate::tr;
+use crate::ui;
+use crate::viz::Waveform;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Transport {
@@ -26,9 +32,14 @@ pub enum BarInput {
     Update {
         status: Box<Status>,
         song: Option<Box<Song>>,
-        album: Option<std::sync::Arc<Album>>,
+        album: Option<Arc<Album>>,
     },
+    Peaks(Option<Arc<Vec<f32>>>),
+    Signal(Option<Box<SignalPath>>, bool),
     QueueShown(bool),
+    VizShown(bool),
+    /// Re-read shared state (e.g. a DR value arrived).
+    Refresh,
     Tick,
 }
 
@@ -36,18 +47,17 @@ pub enum BarInput {
 pub enum BarOutput {
     Transport(Transport),
     ShowQueue(bool),
+    ShowViz(bool),
     OpenCurrentAlbum,
 }
 
 pub struct PlayerBar {
+    ctx: Rc<Ctx>,
     status: Status,
     song: Option<Song>,
     album_folder: Option<String>,
-    /// When `status.elapsed` was sampled, for local interpolation between
-    /// server events (MPD's idle doesn't report time progress).
-    sampled_at: Instant,
     queue_shown: bool,
-    covers: Rc<CoverLoader>,
+    viz_shown: bool,
 }
 
 pub struct BarWidgets {
@@ -58,7 +68,8 @@ pub struct BarWidgets {
     album_button: gtk::Button,
     format: gtk::Label,
     bitrate: gtk::Label,
-    progress: gtk::ProgressBar,
+    dr: gtk::Label,
+    waveform: Waveform,
     elapsed: gtk::Label,
     total: gtk::Label,
     play: gtk::Button,
@@ -66,37 +77,43 @@ pub struct BarWidgets {
     repeat: gtk::Button,
     queue: gtk::ToggleButton,
     queue_handler: glib::SignalHandlerId,
+    viz: gtk::ToggleButton,
+    viz_handler: glib::SignalHandlerId,
+    signal: SignalIndicator,
     cover_folder: Rc<std::cell::RefCell<Option<String>>>,
 }
 
-fn mmss(secs: f64) -> String {
-    let s = secs.max(0.0) as u64;
-    format!("{}:{:02}", s / 60, s % 60)
-}
-
-impl PlayerBar {
-    fn elapsed_now(&self) -> f64 {
-        let base = self.status.elapsed.unwrap_or(0.0);
-        if self.status.state == PlayState::Play {
-            base + self.sampled_at.elapsed().as_secs_f64()
-        } else {
-            base
-        }
-        .min(self.status.duration.unwrap_or(f64::MAX))
+/// CSS class for a DR value (DrPlayer's colour bands).
+pub fn dr_class(dr: i32) -> &'static str {
+    match dr {
+        14.. => "dr-green",
+        10..=13 => "dr-yellow",
+        7..=9 => "dr-orange",
+        _ => "dr-red",
     }
 }
 
-impl SimpleComponent for PlayerBar {
-    type Init = Rc<CoverLoader>;
+fn toggle(icon: &str, tip: &str) -> gtk::ToggleButton {
+    gtk::ToggleButton::builder()
+        .icon_name(icon)
+        .css_classes(["flat"])
+        .tooltip_text(tr(tip))
+        .valign(gtk::Align::Center)
+        .build()
+}
+
+impl Component for PlayerBar {
+    type Init = Rc<Ctx>;
     type Input = BarInput;
     type Output = BarOutput;
+    type CommandOutput = ();
     type Root = gtk::Box;
     type Widgets = BarWidgets;
 
     fn init_root() -> gtk::Box {
         gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
-            .spacing(6)
+            .spacing(4)
             .margin_start(12)
             .margin_end(12)
             .margin_top(8)
@@ -105,11 +122,7 @@ impl SimpleComponent for PlayerBar {
             .build()
     }
 
-    fn init(
-        covers: Rc<CoverLoader>,
-        root: gtk::Box,
-        sender: ComponentSender<Self>,
-    ) -> ComponentParts<Self> {
+    fn init(ctx: Rc<Ctx>, root: gtk::Box, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         // -- Row 1: cover · text · audio info ----------------------------------
         let cover = gtk::Picture::builder()
             .content_fit(gtk::ContentFit::Cover)
@@ -127,9 +140,17 @@ impl SimpleComponent for PlayerBar {
             .overflow(gtk::Overflow::Hidden)
             .valign(gtk::Align::Center)
             .css_classes(["bar-cover"])
+            .tooltip_text(tr("Now playing (full window)"))
             .build();
         cover_frame.set_child(Some(&cover_placeholder));
         cover_frame.add_overlay(&cover);
+        cover_frame.set_cursor_from_name(Some("pointer"));
+        {
+            let c = ctx.clone();
+            let click = gtk::GestureClick::new();
+            click.connect_released(move |_, _, _, _| c.act(Action::ShowNowPlaying(true)));
+            cover_frame.add_controller(click);
+        }
 
         let title = gtk::Label::builder()
             .xalign(0.0)
@@ -153,11 +174,9 @@ impl SimpleComponent for PlayerBar {
                 let _ = s.output(BarOutput::OpenCurrentAlbum);
             });
         }
-        let text = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .hexpand(true)
-            .valign(gtk::Align::Center)
-            .build();
+        let text = ui::vbox(0);
+        text.set_hexpand(true);
+        text.set_valign(gtk::Align::Center);
         text.append(&title);
         text.append(&album_button);
 
@@ -169,19 +188,29 @@ impl SimpleComponent for PlayerBar {
             .xalign(1.0)
             .css_classes(["monospace", "caption", "dim-label"])
             .build();
-        let info = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .valign(gtk::Align::Center)
+        let dr = gtk::Label::builder()
+            .xalign(1.0)
+            .css_classes(["monospace", "caption", "heading"])
+            .tooltip_text(tr("Dynamic range (DR14)"))
             .build();
+        let info = ui::vbox(0);
+        info.set_valign(gtk::Align::Center);
         info.append(&format);
-        info.append(&bitrate);
+        let info2 = ui::hbox(8);
+        info2.set_halign(gtk::Align::End);
+        info2.append(&bitrate);
+        info2.append(&dr);
+        info.append(&info2);
 
-        let row1 = gtk::Box::builder().spacing(12).build();
+        let signal = SignalIndicator::new();
+
+        let row1 = ui::hbox(12);
         row1.append(&cover_frame);
         row1.append(&text);
         row1.append(&info);
+        row1.append(&signal.button);
 
-        // -- Row 2: progress ----------------------------------------------------
+        // -- Row 2: waveform -----------------------------------------------------
         let elapsed = gtk::Label::builder()
             .css_classes(["monospace", "caption", "dim-label"])
             .width_chars(6)
@@ -192,16 +221,19 @@ impl SimpleComponent for PlayerBar {
             .width_chars(6)
             .xalign(1.0)
             .build();
-        let progress = gtk::ProgressBar::builder()
-            .hexpand(true)
-            .valign(gtk::Align::Center)
-            .build();
-        let row2 = gtk::Box::builder().spacing(8).build();
+        let c = ctx.clone();
+        let waveform = Waveform::new(&ctx, 32, move |f| {
+            let d = c.clock.get().duration;
+            if d > 0.0 {
+                c.act(Action::Seek(f * d));
+            }
+        });
+        let row2 = ui::hbox(8);
         row2.append(&elapsed);
-        row2.append(&progress);
+        row2.append(&waveform.area);
         row2.append(&total);
 
-        // -- Row 3: transport · queue ------------------------------------------
+        // -- Row 3: transport · toggles -----------------------------------------
         let button = |icon: &str, tip: &str, t: Transport| {
             let b = gtk::Button::builder()
                 .icon_name(icon)
@@ -237,33 +269,36 @@ impl SimpleComponent for PlayerBar {
             "Repeat: off",
             Transport::CycleRepeat,
         );
-
-        let transport = gtk::Box::builder()
-            .spacing(6)
-            .halign(gtk::Align::Center)
-            .hexpand(true)
-            .build();
+        let transport = ui::hbox(6);
+        transport.set_halign(gtk::Align::Center);
+        transport.set_hexpand(true);
         for b in [&shuffle, &prev, &play, &stop, &next, &repeat] {
             transport.append(b);
         }
 
-        let queue = gtk::ToggleButton::builder()
-            .icon_name("view-list-symbolic")
-            .css_classes(["flat"])
-            .tooltip_text(tr("Play queue"))
-            .build();
+        let viz = toggle("utilities-system-monitor-symbolic", "Oscilloscope");
+        let viz_handler = {
+            let s = sender.clone();
+            viz.connect_toggled(move |b| {
+                let _ = s.output(BarOutput::ShowViz(b.is_active()));
+            })
+        };
+        let queue = toggle("view-list-symbolic", "Play queue");
         let queue_handler = {
             let s = sender.clone();
             queue.connect_toggled(move |b| {
                 let _ = s.output(BarOutput::ShowQueue(b.is_active()));
             })
         };
-        // Balance the queue button so the transport stays centred.
-        let spacer = gtk::Box::builder().width_request(34).build();
-        let row3 = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        let toggles = ui::hbox(2);
+        toggles.append(&viz);
+        toggles.append(&queue);
+        // Balance the toggles so the transport stays centred.
+        let spacer = gtk::Box::builder().width_request(72).build();
+        let row3 = ui::hbox(0);
         row3.append(&spacer);
         row3.append(&transport);
-        row3.append(&queue);
+        row3.append(&toggles);
 
         root.append(&row1);
         root.append(&row2);
@@ -278,12 +313,12 @@ impl SimpleComponent for PlayerBar {
         }
 
         let model = PlayerBar {
+            ctx,
             status: Status::default(),
             song: None,
             album_folder: None,
-            sampled_at: Instant::now(),
             queue_shown: false,
-            covers,
+            viz_shown: false,
         };
         let widgets = BarWidgets {
             cover,
@@ -293,7 +328,8 @@ impl SimpleComponent for PlayerBar {
             album_button,
             format,
             bitrate,
-            progress,
+            dr,
+            waveform,
             elapsed,
             total,
             play,
@@ -301,12 +337,15 @@ impl SimpleComponent for PlayerBar {
             repeat,
             queue,
             queue_handler,
+            viz,
+            viz_handler,
+            signal,
             cover_folder: Rc::default(),
         };
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, msg: BarInput, _sender: ComponentSender<Self>) {
+    fn update(&mut self, msg: BarInput, _sender: ComponentSender<Self>, _root: &gtk::Box) {
         match msg {
             BarInput::Update {
                 status,
@@ -315,26 +354,40 @@ impl SimpleComponent for PlayerBar {
             } => {
                 self.status = *status;
                 self.song = song.map(|s| *s);
-                self.sampled_at = Instant::now();
-                if let Some(a) = &album {
-                    // Kick off loading; the view picks it up from the cache.
-                    let folder = a.folder.clone();
-                    self.covers.request(a, |_| {});
-                    self.album_folder = Some(folder);
-                } else {
-                    self.album_folder = None;
-                }
+                self.album_folder = album.as_ref().map(|a| {
+                    self.ctx.covers.request(a, |_| {});
+                    a.folder.clone()
+                });
             }
             BarInput::QueueShown(v) => self.queue_shown = v,
-            BarInput::Tick => {}
+            BarInput::VizShown(v) => self.viz_shown = v,
+            // Handled in update_with_view-like fashion below.
+            BarInput::Peaks(_) | BarInput::Signal(..) | BarInput::Refresh | BarInput::Tick => {}
         }
+    }
+
+    fn update_with_view(
+        &mut self,
+        w: &mut BarWidgets,
+        msg: BarInput,
+        sender: ComponentSender<Self>,
+        root: &gtk::Box,
+    ) {
+        match &msg {
+            BarInput::Peaks(p) => w.waveform.set_peaks(p.clone()),
+            BarInput::Signal(path, connected) => {
+                w.signal.update(path.as_deref(), &self.status, *connected)
+            }
+            _ => {}
+        }
+        self.update(msg, sender.clone(), root);
+        self.update_view(w, sender);
     }
 
     fn update_view(&self, w: &mut BarWidgets, _sender: ComponentSender<Self>) {
         let st = &self.status;
         let stopped = st.state == PlayState::Stop && self.song.is_none();
 
-        // Text
         match &self.song {
             Some(s) if !stopped => {
                 w.title.set_label(s.display_title());
@@ -353,7 +406,6 @@ impl SimpleComponent for PlayerBar {
             }
         }
 
-        // Audio info
         w.format
             .set_label(&st.audio.map(|a| a.to_string()).unwrap_or_default());
         w.bitrate.set_label(
@@ -362,22 +414,31 @@ impl SimpleComponent for PlayerBar {
                 .map(|b| format!("{b} kbps"))
                 .unwrap_or_default(),
         );
+        for c in ["dr-green", "dr-yellow", "dr-orange", "dr-red"] {
+            w.dr.remove_css_class(c);
+        }
+        match self.song.as_ref().and_then(|s| self.ctx.dr(&s.file)) {
+            Some(d) => {
+                w.dr.set_label(&format!("DR{d}"));
+                w.dr.add_css_class(dr_class(d));
+            }
+            None => w.dr.set_label(""),
+        }
 
-        // Progress
-        let dur = st.duration.unwrap_or(0.0);
-        let el = self.elapsed_now();
-        w.progress.set_visible(dur > 0.0);
-        w.progress.set_fraction(if dur > 0.0 {
-            (el / dur).clamp(0.0, 1.0)
+        let clock = self.ctx.clock.get();
+        let has = clock.duration > 0.0;
+        w.waveform.area.set_visible(has);
+        w.elapsed.set_label(&if has {
+            ui::mmss(clock.now())
         } else {
-            0.0
+            String::new()
         });
-        w.elapsed
-            .set_label(if dur > 0.0 { mmss(el) } else { String::new() }.as_str());
-        w.total
-            .set_label(if dur > 0.0 { mmss(dur) } else { String::new() }.as_str());
+        w.total.set_label(&if has {
+            ui::mmss(clock.duration)
+        } else {
+            String::new()
+        });
 
-        // Transport state
         let playing = st.state == PlayState::Play;
         w.play.set_icon_name(if playing {
             "media-playback-pause-symbolic"
@@ -404,14 +465,15 @@ impl SimpleComponent for PlayerBar {
         w.queue.block_signal(&w.queue_handler);
         w.queue.set_active(self.queue_shown);
         w.queue.unblock_signal(&w.queue_handler);
+        w.viz.block_signal(&w.viz_handler);
+        w.viz.set_active(self.viz_shown);
+        w.viz.unblock_signal(&w.viz_handler);
 
-        // Cover (cached by the loader; refresh only when the album changes or
-        // the load has completed).
+        // Cover: retried on each tick until the loader has it.
         let mut bound = w.cover_folder.borrow_mut();
         let want = self.album_folder.clone().filter(|_| !stopped);
-        let cached = want.as_deref().and_then(|f| self.covers.cached(f));
+        let cached = want.as_deref().and_then(|f| self.ctx.covers.cached(f));
         if *bound != want {
-            // Not loaded yet: show the placeholder and retry on the next tick.
             let loaded = cached.is_some();
             let tex = cached.flatten();
             w.cover.set_paintable(tex.as_ref());

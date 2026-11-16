@@ -278,6 +278,16 @@ impl Client {
             .ok_or_else(|| Error::Protocol("update returned no job id".into()))
     }
 
+    /// Replay gain mode: `off`, `track`, `album` or `auto`.
+    pub async fn replay_gain_mode(&self) -> Result<String> {
+        let pairs = self.command(Command::new("replay_gain_status")).await?;
+        Ok(pairs
+            .into_iter()
+            .find(|(k, _)| k == "replay_gain_mode")
+            .map(|(_, v)| v)
+            .unwrap_or_else(|| "off".into()))
+    }
+
     // -- Outputs ------------------------------------------------------------
 
     pub async fn outputs(&self) -> Result<Vec<Output>> {
