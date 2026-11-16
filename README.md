@@ -12,7 +12,24 @@
 
 <!-- VIDEO -->
 
-<!-- SCREENSHOTS -->
+<p align="center">
+  <img src="docs/media/album.png" alt="Album page: the exact pressing's label, catalogue number and credits from MusicBrainz and Discogs, Wikipedia, DR14 and a certified-pressing card">
+  <br><em>The exact pressing: credits, catalogue number and country cross-checked with MusicBrainz and Discogs, DR14, certified pressing card</em>
+</p>
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/media/versions.png" alt="Compare versions of a track across editions"><br><em>Every version of a track across your editions, ranked</em></td>
+    <td width="50%"><img src="docs/media/lyrics.png" alt="Full-window now playing with synced lyrics"><br><em>Now playing with synced lyrics</em></td>
+  </tr>
+  <tr>
+    <td><img src="docs/media/visualizer.png" alt="Spectrum visualizer over blurred artwork"><br><em>Spectrum, oscilloscope and circular visualizers</em></td>
+    <td><img src="docs/media/producers.png" alt="Producers and engineers across the library"><br><em>Producers, engineers and mastering credits across the library</em></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/media/stats.png" alt="Listening statistics"><br><em>Listening statistics</em></td>
+  </tr>
+</table>
 
 ## Features
 

@@ -704,11 +704,11 @@ fn versions_popover(ctx: &Rc<Ctx>, r: TrackRef, pop: &gtk::Popover) -> gtk::Widg
         }
         row.append(&ui::format_badge(&a.format()));
         if let Some(d) = &a.date {
-            row.append(&ui::label(d, &["dim-label", "caption"]));
+            row.append(&ui::ellipsized(d, &["dim-label", "caption"]));
         }
         match ctx.dr(&s.file) {
             Some(d) => row.append(&ui::dr_badge(d)),
-            None => row.append(&ui::label("DR?", &["dim-label", "caption"])),
+            None => row.append(&ui::ellipsized("DR?", &["dim-label", "caption"])),
         }
         row.append(&ui::ellipsized(
             &format!("{}pts", score.total),

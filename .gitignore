@@ -16,3 +16,6 @@ packaging/flatpak/cargo-sources.json
 # Local configuration never belongs in the repo (it can hold API keys)
 config.toml
 CLAUDE.local.md
+
+# Raw screenshots (optimised copies live in docs/media)
+/Screenshots/
