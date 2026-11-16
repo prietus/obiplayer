@@ -3,9 +3,13 @@
 pub mod album;
 pub mod albuminfo;
 pub mod browse;
+pub mod editions;
 pub mod group;
+pub mod home;
 pub mod producers;
 pub mod search;
+pub mod smart;
+pub mod stats;
 pub mod track;
 pub mod tracks;
 
@@ -31,6 +35,7 @@ pub fn tag(route: &Route) -> String {
         Route::Label(n) => format!("label:{n}"),
         Route::Composer(n) => format!("composer:{n}"),
         Route::Producer(n) => format!("producer:{n}"),
+        Route::Editions(f) => format!("editions:{f}"),
         Route::Search(_) => "search".into(),
     }
 }

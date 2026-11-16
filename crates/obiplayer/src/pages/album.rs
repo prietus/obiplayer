@@ -98,6 +98,25 @@ impl AlbumPage {
         }
         actions.append(&play);
         actions.append(&enqueue);
+        {
+            let radio = gtk::Button::builder()
+                .icon_name("network-wireless-symbolic")
+                .tooltip_text(tr("Radio: play this album, then similar music"))
+                .css_classes(["circular"])
+                .build();
+            let (c, f) = (ctx.clone(), album.folder.clone());
+            radio.connect_clicked(move |_| c.act(Action::StartRadioFromAlbum(f.clone())));
+            actions.append(&radio);
+        }
+        if !lib.other_editions(&album).is_empty() {
+            let cmp = gtk::Button::builder()
+                .label(tr("Compare editions"))
+                .css_classes(["pill"])
+                .build();
+            let (c, f) = (ctx.clone(), album.folder.clone());
+            cmp.connect_clicked(move |_| c.act(Action::Open(Route::Editions(f.clone()))));
+            actions.append(&cmp);
+        }
         actions.append(&more_menu(ctx, &album));
         left.append(&actions);
         let dr_box = ui::hbox(8);
@@ -673,7 +692,7 @@ fn versions_popover(ctx: &Rc<Ctx>, r: TrackRef, pop: &gtk::Popover) -> gtk::Widg
             Some(d) => row.append(&ui::dr_badge(d)),
             None => row.append(&ui::label("DR?", &["dim-label", "caption"])),
         }
-        row.append(&ui::label(
+        row.append(&ui::ellipsized(
             &format!("{}pts", score.total),
             &["dim-label", "caption", "numeric"],
         ));

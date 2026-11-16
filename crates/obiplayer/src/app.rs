@@ -74,6 +74,17 @@ pub struct App {
     browse: Vec<Browse>,
     tracks: TracksView,
     producers: Rc<crate::pages::producers::ProducersView>,
+    home: Rc<crate::pages::home::HomeView>,
+    /// Queue contents (for radio seeds and exclusions).
+    queue_songs: Vec<Song>,
+    /// The current track has been counted as played.
+    counted: bool,
+    /// The user pressed Stop: don't auto-continue with radio.
+    user_stopped: bool,
+    /// Radio on, with its original seed (re-used to avoid genre drift).
+    radio: Option<obiplayer_core::radio::Seed>,
+    stats_view: Rc<crate::pages::stats::StatsView>,
+    smart: Rc<crate::pages::smart::SmartView>,
     lyrics: Rc<crate::lyrics_ui::LyricsView>,
     lyrics_shown: bool,
     tasks: crate::tasks_ui::TasksState,
@@ -92,6 +103,8 @@ pub enum AppMsg {
     ShowQueue(bool),
     ShowViz(bool),
     ShowLyrics(bool),
+    /// Once a second: play counting.
+    Tick,
     /// Genre enrichment progress: (folder, new genres, done, total).
     Genres(String, Vec<String>, usize, usize),
     ReloadLibrary,
@@ -115,6 +128,8 @@ pub enum Cmd {
     DrDone(String, Option<i32>),
     Peaks(String, Option<Vec<f32>>),
     Samples(String, Option<Vec<f32>>),
+    /// Similar artists fetched for a radio batch: (similar, replace queue, files to put first).
+    Radio(std::collections::HashMap<String, f64>, bool, Vec<String>),
 }
 
 pub struct AppWidgets {
@@ -257,6 +272,97 @@ impl App {
             .root()
             .and_downcast::<adw::ApplicationWindow>()
             .expect("window")
+    }
+
+    /// Count the current track as played once past 50 % (MPD stickers
+    /// `play_count`/`last_played` + local history), like DrPlayer.
+    fn count_play(&mut self, sender: &ComponentSender<Self>) {
+        // Test runs against a real server must not alter its stats.
+        if std::env::var_os("OBIPLAYER_NO_COUNT").is_some() {
+            return;
+        }
+        let clock = self.ctx.clock.get();
+        if self.counted
+            || !clock.playing
+            || clock.duration <= 0.0
+            || clock.now() < clock.duration * 0.5
+        {
+            return;
+        }
+        let Some(song) = self.song.clone() else {
+            return;
+        };
+        self.counted = true;
+        let now = glib::DateTime::now_utc().map(|d| d.to_unix()).unwrap_or(0);
+        let play = obiplayer_core::history::Play {
+            ts: now,
+            file: song.file.clone(),
+            artist: song.artist().unwrap_or_default().to_owned(),
+            album: song.album().unwrap_or_default().to_owned(),
+            title: song.display_title().to_owned(),
+            duration: song.duration.unwrap_or(clock.duration),
+        };
+        if let Err(e) =
+            obiplayer_core::history::History::new(obiplayer_core::history::History::default_path())
+                .append(&play)
+        {
+            tracing::warn!(error = %e, "could not write play history");
+        }
+        let file = song.file;
+        self.run(sender, move |c| async move {
+            c.sticker_increment(&file, "play_count", 1).await?;
+            c.sticker_set(&file, "last_played", &now.to_string()).await
+        });
+    }
+
+    /// Seed from the last tracks of the queue, else the playing album.
+    fn current_seed(&self) -> Option<obiplayer_core::radio::Seed> {
+        if !self.queue_songs.is_empty() {
+            let refs: Vec<&Song> = self.queue_songs.iter().collect();
+            return Some(obiplayer_core::radio::seed_from_songs(&refs));
+        }
+        let lib = self.ctx.lib();
+        let a = self
+            .current_folder
+            .as_ref()
+            .and_then(|f| lib.album_by_folder(f))?;
+        Some(obiplayer_core::radio::seed_from_album_with(
+            a,
+            &self.ctx.extra_genres.borrow(),
+        ))
+    }
+
+    /// Turn radio on with `seed`; fetch similar artists, then pick tracks.
+    fn start_radio(
+        &mut self,
+        sender: &ComponentSender<Self>,
+        seed: obiplayer_core::radio::Seed,
+        replace: bool,
+        first: Vec<String>,
+    ) {
+        let artist = seed.artist.clone();
+        self.radio = Some(seed);
+        self.user_stopped = false;
+        self.bar.emit(BarInput::RadioOn(true));
+        self.toast(&tr("Radio on"));
+        let s = self.ctx.services.clone();
+        sender.oneshot_command(async move {
+            let similar = if artist.is_empty() {
+                Default::default()
+            } else {
+                s.lastfm.similar_artists(&artist, 50).await
+            };
+            Cmd::Radio(similar, replace, first)
+        });
+    }
+
+    /// Queue ended: refill from the original seed (or start a radio seeded by
+    /// what was playing).
+    fn continue_radio(&mut self, sender: &ComponentSender<Self>) {
+        let seed = self.radio.clone().or_else(|| self.current_seed());
+        if let Some(seed) = seed {
+            self.start_radio(sender, seed, true, Vec::new());
+        }
     }
 
     fn push_tasks(&self) {
@@ -459,6 +565,9 @@ impl App {
                 GroupPage::new(&self.ctx, Kind::Composer, n).map(|p| Box::new(p) as _)
             }
             Route::Search(q) => Some(Box::new(SearchPage::new(&self.ctx, q))),
+            Route::Editions(f) => {
+                crate::pages::editions::EditionsPage::new(&self.ctx, f).map(|p| Box::new(p) as _)
+            }
             Route::Producer(n) => Some(Box::new(crate::pages::producers::ProducerPage::new(
                 &self.ctx, n,
             ))),
@@ -490,6 +599,8 @@ impl App {
             "artist" => Route::Artist(arg),
             "label" => Route::Label(arg),
             "composer" => Route::Composer(arg),
+            "editions" => Route::Editions(arg),
+            "producer" => Route::Producer(arg),
             "search" => Route::Search(arg),
             "mode" => {
                 self.modes.set_visible_child_name(&arg);
@@ -634,6 +745,33 @@ impl App {
                 self.push_bar();
             }
             Action::Transport(t) => sender.input(AppMsg::Transport(t)),
+            Action::AnalyzeDr(files) => self.queue_dr(sender, files, false),
+            Action::PlayFiles(files) => self.run(sender, move |c| async move {
+                c.replace_queue_and_play(&files).await
+            }),
+            Action::StartRadioFromAlbum(folder) => {
+                let lib = self.ctx.lib();
+                let Some(a) = lib.album_by_folder(&folder).cloned() else {
+                    return;
+                };
+                let seed = obiplayer_core::radio::seed_from_album_with(
+                    &a,
+                    &self.ctx.extra_genres.borrow(),
+                );
+                let first = a.tracks.iter().map(|t| t.file.clone()).collect();
+                self.start_radio(sender, seed, true, first);
+            }
+            Action::StartRadioFromCurrent => {
+                let seed = self.current_seed();
+                match seed {
+                    Some(s) => self.start_radio(sender, s, false, Vec::new()),
+                    None => self.toast(&tr("Play something first to start a radio")),
+                }
+            }
+            Action::StopRadio => {
+                self.radio = None;
+                self.bar.emit(BarInput::RadioOn(false));
+            }
             Action::Seek(secs) => {
                 let mut c = self.ctx.clock.get();
                 c.elapsed = secs;
@@ -772,6 +910,7 @@ impl Component for App {
             covers.clone(),
             config.library.music_dir.clone(),
             services,
+            client.clone(),
             sender.input_sender().clone(),
         );
 
@@ -879,6 +1018,8 @@ impl Component for App {
         ];
         let tracks = TracksView::new(&ctx);
         let modes = adw::ViewStack::new();
+        let home = crate::pages::home::HomeView::new();
+        modes.add_titled_with_icon(&home.root, Some("home"), &tr("Home"), "go-home-symbolic");
         modes.add_titled_with_icon(
             &albums_page,
             Some("albums"),
@@ -916,12 +1057,32 @@ impl Component for App {
             &tr("Producers"),
             "system-users-symbolic",
         );
+        let smart = crate::pages::smart::SmartView::new(&ctx);
+        modes.add_titled_with_icon(&smart.root, Some("smart"), &tr("Smart"), "starred-symbolic");
+        let stats_view = crate::pages::stats::StatsView::new(&ctx);
+        modes.add_titled_with_icon(
+            &stats_view.root,
+            Some("stats"),
+            &tr("Stats"),
+            "utilities-system-monitor-symbolic",
+        );
+        modes.set_visible_child_name("albums");
         {
-            // Credits accumulate as albums are opened: rescan on entry.
-            let (p, c) = (producers.clone(), ctx.clone());
+            // Data that changes while browsing is refreshed on entry.
+            let (p, h, st, sm, c) = (
+                producers.clone(),
+                home.clone(),
+                stats_view.clone(),
+                smart.clone(),
+                ctx.clone(),
+            );
             modes.connect_visible_child_name_notify(move |m| {
-                if m.visible_child_name().as_deref() == Some("producers") {
-                    p.reload(&c);
+                match m.visible_child_name().as_deref() {
+                    Some("producers") => p.reload(&c),
+                    Some("home") => h.reload(&c),
+                    Some("stats") => st.reload(&c),
+                    Some("smart") => sm.reload(),
+                    _ => {}
                 }
             });
         }
@@ -1047,6 +1208,13 @@ impl Component for App {
             ));
         }
         root.add_controller(shortcuts);
+        {
+            let s = sender.clone();
+            glib::timeout_add_seconds_local(1, move || {
+                s.input(AppMsg::Tick);
+                glib::ControlFlow::Continue
+            });
+        }
 
         // -- Server events -----------------------------------------------------------------
         let (tx, rx) = async_channel::unbounded();
@@ -1082,6 +1250,13 @@ impl Component for App {
             browse,
             tracks,
             producers,
+            home,
+            queue_songs: Vec::new(),
+            counted: false,
+            user_stopped: false,
+            radio: None,
+            stats_view,
+            smart,
             lyrics,
             lyrics_shown: false,
             tasks: Default::default(),
@@ -1165,7 +1340,12 @@ impl Component for App {
                             PlayState::Stop => Ok(()),
                         }
                     }),
-                    Transport::Stop => self.run(&sender, |c| async move { c.stop().await }),
+                    Transport::Stop => {
+                        self.user_stopped = true;
+                        self.radio = None;
+                        self.bar.emit(BarInput::RadioOn(false));
+                        self.run(&sender, |c| async move { c.stop().await })
+                    }
                     Transport::Next => self.run(&sender, |c| async move { c.next().await }),
                     Transport::Previous => self.run(&sender, |c| async move { c.previous().await }),
                     Transport::ToggleShuffle => {
@@ -1198,6 +1378,7 @@ impl Component for App {
                 self.run(&sender, move |c| async move { c.delete_pos(pos).await })
             }
             AppMsg::ClearQueue => self.run(&sender, |c| async move { c.clear().await }),
+            AppMsg::Tick => self.count_play(&sender),
             AppMsg::Genres(folder, new, done, total) => {
                 if !new.is_empty() {
                     self.extra_genres
@@ -1254,6 +1435,16 @@ impl Component for App {
             Cmd::Status(Ok((status, song))) => {
                 let old_pos = self.status.song_pos;
                 let old_file = self.song.as_ref().map(|s| s.file.clone());
+                // The queue ran out while playing its last track (not a Stop
+                // from the user, nor a server that was idle at startup).
+                let ran_out = self.status.state == PlayState::Play
+                    && status.state == PlayState::Stop
+                    && status.playlist_length > 0
+                    && old_pos.is_some_and(|p| p + 1 >= self.status.playlist_length)
+                    && !self.user_stopped;
+                if status.state == PlayState::Play {
+                    self.user_stopped = false;
+                }
                 self.status = *status;
                 self.song = song.map(|s| *s);
                 if self.queue_version != Some(self.status.playlist_version) {
@@ -1267,7 +1458,11 @@ impl Component for App {
                 self.push_bar();
                 self.push_signal();
                 let new_file = self.song.as_ref().map(|s| s.file.clone());
+                if ran_out {
+                    self.continue_radio(&sender);
+                }
                 if new_file != old_file {
+                    self.counted = false;
                     if let Some(f) = new_file {
                         self.queue_dr(&sender, vec![f], true);
                     }
@@ -1288,6 +1483,7 @@ impl Component for App {
             Cmd::Status(Err(e)) => tracing::warn!(error = %e, "status failed"),
             Cmd::Queue(version, Ok(songs)) => {
                 self.queue_version = Some(version);
+                self.queue_songs = songs.clone();
                 let current = self.status.song_pos;
                 let (tx, rx) = relm4::channel::<u32>();
                 {
@@ -1329,6 +1525,9 @@ impl Component for App {
                 self.tracks.reload(&self.ctx);
                 self.start_genre_enrichment(&sender);
                 self.producers.reload(&self.ctx);
+                self.home.reload(&self.ctx);
+                self.smart.reload();
+                let _ = &self.stats_view;
                 {
                     let files: Vec<String> = lib
                         .albums
@@ -1413,6 +1612,49 @@ impl Component for App {
                     self.nowplaying.waveform.set_peaks(p.clone());
                     self.bar.emit(BarInput::Peaks(p));
                 }
+            }
+            Cmd::Radio(similar, replace, first) => {
+                let Some(seed) = self.radio.clone() else {
+                    return;
+                };
+                let lib = self.ctx.lib();
+                let exclude: HashSet<String> = if replace {
+                    first.iter().cloned().collect()
+                } else {
+                    self.queue_songs
+                        .iter()
+                        .map(|s| s.file.clone())
+                        .chain(first.iter().cloned())
+                        .collect()
+                };
+                let rng = glib::random_int() as u64 | ((glib::monotonic_time() as u64) << 32);
+                let picked = obiplayer_core::radio::generate_with(
+                    &lib,
+                    &seed,
+                    &similar,
+                    &self.ctx.ratings.borrow(),
+                    &self.ctx.extra_genres.borrow(),
+                    &exclude,
+                    20,
+                    rng,
+                );
+                if picked.is_empty() && first.is_empty() {
+                    self.toast(&tr("Radio: nothing similar found in the library"));
+                    return;
+                }
+                let files: Vec<String> = first.into_iter().chain(picked).collect();
+                let start = replace || self.status.state != PlayState::Play;
+                self.run(&sender, move |c| async move {
+                    let mut cmds = Vec::new();
+                    if replace {
+                        cmds.push(mpd::Command::new("clear"));
+                    }
+                    cmds.extend(files.iter().map(|f| mpd::Command::new("add").arg(f)));
+                    if start {
+                        cmds.push(mpd::Command::new("play"));
+                    }
+                    c.command_list(&cmds).await
+                });
             }
             Cmd::Samples(file, data) => {
                 let mut s = self.ctx.samples.borrow_mut();

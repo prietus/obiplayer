@@ -57,11 +57,15 @@ fn curve_through(cr: &cairo::Context, pts: &[(f64, f64)]) {
     }
 }
 
-/// Accent colour: drawing areas get `color: @accent_color` from CSS
-/// (`.waveform`, `.visualizer`), which follows the theme and the user's
-/// accent choice.
+/// Accent colour (white in the full-window view, where it sits on dark art).
 fn accent(w: &impl IsA<gtk::Widget>) -> gtk::gdk::RGBA {
-    w.as_ref().color()
+    if w.as_ref()
+        .ancestor(gtk::Overlay::static_type())
+        .is_some_and(|o| o.has_css_class("now-playing"))
+    {
+        return gtk::gdk::RGBA::WHITE;
+    }
+    crate::ui::accent_rgba(w)
 }
 
 /// Regular foreground (text colour of the surroundings) for neutral parts.

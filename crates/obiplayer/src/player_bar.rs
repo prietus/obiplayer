@@ -40,6 +40,7 @@ pub enum BarInput {
     VizShown(bool),
     LyricsShown(bool),
     Tasks(crate::tasks_ui::TasksState),
+    RadioOn(bool),
     /// Re-read shared state (e.g. a DR value arrived).
     Refresh,
     Tick,
@@ -62,6 +63,7 @@ pub struct PlayerBar {
     queue_shown: bool,
     viz_shown: bool,
     lyrics_shown: bool,
+    radio_on: bool,
 }
 
 pub struct BarWidgets {
@@ -85,6 +87,8 @@ pub struct BarWidgets {
     viz_handler: glib::SignalHandlerId,
     lyrics: gtk::ToggleButton,
     lyrics_handler: glib::SignalHandlerId,
+    radio: gtk::ToggleButton,
+    radio_handler: glib::SignalHandlerId,
     signal: SignalIndicator,
     tasks: std::rc::Rc<crate::tasks_ui::TasksIndicator>,
     cover_folder: Rc<std::cell::RefCell<Option<String>>>,
@@ -305,13 +309,25 @@ impl Component for PlayerBar {
             })
         };
         let toggles = ui::hbox(2);
+        let radio = toggle("network-wireless-symbolic", "Radio");
+        let radio_handler = {
+            let c = ctx.clone();
+            radio.connect_toggled(move |b| {
+                c.act(if b.is_active() {
+                    Action::StartRadioFromCurrent
+                } else {
+                    Action::StopRadio
+                })
+            })
+        };
         let tasks = crate::tasks_ui::TasksIndicator::new();
         toggles.append(&tasks.button);
+        toggles.append(&radio);
         toggles.append(&viz);
         toggles.append(&lyrics);
         toggles.append(&queue);
         // Balance the toggles so the transport stays centred.
-        let spacer = gtk::Box::builder().width_request(144).build();
+        let spacer = gtk::Box::builder().width_request(180).build();
         let row3 = ui::hbox(0);
         row3.append(&spacer);
         row3.append(&transport);
@@ -337,6 +353,7 @@ impl Component for PlayerBar {
             queue_shown: false,
             viz_shown: false,
             lyrics_shown: false,
+            radio_on: false,
         };
         let widgets = BarWidgets {
             cover,
@@ -359,6 +376,8 @@ impl Component for PlayerBar {
             viz_handler,
             lyrics,
             lyrics_handler,
+            radio,
+            radio_handler,
             signal,
             tasks,
             cover_folder: Rc::default(),
@@ -383,6 +402,7 @@ impl Component for PlayerBar {
             BarInput::QueueShown(v) => self.queue_shown = v,
             BarInput::VizShown(v) => self.viz_shown = v,
             BarInput::LyricsShown(v) => self.lyrics_shown = v,
+            BarInput::RadioOn(v) => self.radio_on = v,
             // Handled in update_with_view-like fashion below.
             BarInput::Peaks(_)
             | BarInput::Signal(..)
@@ -492,6 +512,14 @@ impl Component for PlayerBar {
         w.queue.block_signal(&w.queue_handler);
         w.queue.set_active(self.queue_shown);
         w.queue.unblock_signal(&w.queue_handler);
+        w.radio.block_signal(&w.radio_handler);
+        w.radio.set_active(self.radio_on);
+        w.radio.unblock_signal(&w.radio_handler);
+        if self.radio_on {
+            w.radio.add_css_class("radio-on");
+        } else {
+            w.radio.remove_css_class("radio-on");
+        }
         w.lyrics.block_signal(&w.lyrics_handler);
         w.lyrics.set_active(self.lyrics_shown);
         w.lyrics.unblock_signal(&w.lyrics_handler);

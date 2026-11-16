@@ -25,6 +25,7 @@ pub enum Route {
     Label(String),
     Composer(String),
     Producer(String),
+    Editions(String),
     Search(String),
 }
 
@@ -90,6 +91,13 @@ pub enum Action {
     /// Seek within the current track (seconds).
     Seek(f64),
     ShowNowPlaying(bool),
+    /// Queue DR analysis for these files.
+    AnalyzeDr(Vec<String>),
+    /// Replace the queue with these files and play.
+    PlayFiles(Vec<String>),
+    StartRadioFromAlbum(String),
+    StartRadioFromCurrent,
+    StopRadio,
 }
 
 /// Playback position, sampled from MPD and interpolated locally (MPD's
@@ -150,6 +158,8 @@ pub struct Ctx {
     /// Mono 44.1 kHz samples of the current track, for the visualizers.
     pub samples: RefCell<crate::viz::Samples>,
     pub services: Arc<Services>,
+    /// MPD command client (for pages that query stickers etc.).
+    pub client: obiplayer_core::mpd::Client,
     /// Online release data per album folder (looked up once per session).
     pub releases: RefCell<HashMap<String, Rc<ReleaseInfo>>>,
     /// Genres added by enrichment, per album folder.
@@ -162,6 +172,7 @@ impl Ctx {
         covers: Rc<CoverLoader>,
         music_dir: Option<PathBuf>,
         services: Arc<Services>,
+        client: obiplayer_core::mpd::Client,
         tx: relm4::Sender<AppMsg>,
     ) -> Rc<Ctx> {
         Rc::new(Ctx {
@@ -175,6 +186,7 @@ impl Ctx {
             clock: Cell::default(),
             samples: RefCell::default(),
             services,
+            client,
             releases: RefCell::default(),
             extra_genres: RefCell::default(),
             tx,

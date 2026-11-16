@@ -30,7 +30,7 @@ const CSS: &str = r#"
 .bar-cover { border-radius: 6px; }
 .playing-badge {
   padding: 6px; border-radius: 999px;
-  background: alpha(@window_bg_color, 0.85); color: @accent_color;
+  background: alpha(@window_bg_color, 0.85); color: @accent_color; color: var(--accent-color);
 }
 .player-bar { }
 .play-button { min-width: 40px; min-height: 40px; }
@@ -40,13 +40,13 @@ const CSS: &str = r#"
 .badge { font-size: 0.75em; font-weight: bold; padding: 1px 7px; border-radius: 999px;
   font-family: monospace; }
 .fmt-dsd { background: alpha(@success_color, 0.18); color: @success_color; }
-.fmt-lossless { background: alpha(@accent_color, 0.18); color: @accent_color; }
+.fmt-lossless { background: alpha(@accent_color, 0.18); color: @accent_color; color: var(--accent-color); }
 .fmt-mqa { background: alpha(#9141ac, 0.2); color: #c061cb; }
 .fmt-lossy { background: alpha(@warning_color, 0.2); color: @warning_color; }
 .fmt-other { background: alpha(currentColor, 0.1); }
 .badge-best { background: alpha(@success_color, 0.25); color: @success_color; }
 .badge-preferred { background: alpha(currentColor, 0.15); }
-.badge-current { background: alpha(@accent_color, 0.25); color: @accent_color; }
+.badge-current { background: alpha(@accent_color, 0.25); color: @accent_color; color: var(--accent-color); }
 .row-best { background: alpha(@success_color, 0.06); border-radius: 6px; }
 .row-warning { background: alpha(@error_color, 0.05); border-radius: 6px; }
 .current-track { background: alpha(@accent_color, 0.08); border-radius: 6px; }
@@ -56,7 +56,7 @@ const CSS: &str = r#"
 .star-off { color: alpha(currentColor, 0.3); }
 .chip { padding: 2px 12px; min-height: 0; font-size: 0.85em; font-weight: bold; }
 .filter-chip { padding: 2px 4px 2px 12px; border-radius: 999px; background: alpha(@accent_color, 0.15); }
-.versions-button { color: @accent_color; padding: 2px 8px; min-height: 0; }
+.versions-button { color: @accent_color; color: var(--accent-color); padding: 2px 8px; min-height: 0; }
 .dr-green { color: #33d17a; } .badge.dr-green { background: alpha(#33d17a, 0.18); }
 .dr-yellow { color: #f6d32d; } .badge.dr-yellow { background: alpha(#f6d32d, 0.18); }
 .dr-orange { color: #ff7800; } .badge.dr-orange { background: alpha(#ff7800, 0.18); }
@@ -67,7 +67,7 @@ levelbar.dr-bar.dr-green block.filled { background: #33d17a; }
 levelbar.dr-bar.dr-yellow block.filled { background: #f6d32d; }
 levelbar.dr-bar.dr-orange block.filled { background: #ff7800; }
 levelbar.dr-bar.dr-red block.filled { background: #e01b24; }
-.waveform, .visualizer { color: @accent_color; }
+.waveform, .visualizer { color: @accent_color; color: var(--accent-color); }
 .now-playing .waveform, .now-playing .visualizer { color: white; }
 .signal-dot { border-radius: 999px; min-width: 10px; min-height: 10px; }
 .signal-idle { background: alpha(currentColor, 0.35); }
@@ -99,9 +99,19 @@ levelbar.dr-bar.dr-red block.filled { background: #e01b24; }
 .source-note { font-style: italic; }
 .lw-better { color: #33d17a; }
 .lw-worse { color: #e66100; }
-.lw-same { color: @accent_color; font-weight: bold; }
+.lw-same { color: @accent_color; color: var(--accent-color); font-weight: bold; }
 .dr-button { padding: 0 2px; min-height: 0; }
 .task-active { color: #ff7800; }
+.edition-card { padding: 10px 12px; border-radius: 10px; background: alpha(currentColor, 0.04); }
+.lw-row-same { background: alpha(@accent_color, 0.08); }
+.lw-row-better { background: alpha(#33d17a, 0.06); }
+.radio-on { color: #33d17a; }
+.stats-card { padding: 12px; }
+.stats-hero { margin: 12px 0; }
+.stats-column { background: @accent_color; background: var(--accent-bg-color); border-radius: 3px; min-width: 8px; }
+levelbar.stats-bar trough { min-height: 4px; }
+levelbar.stats-bar block.filled { background: @accent_color; background: var(--accent-bg-color); }
+.shelf-cell { padding: 4px; }
 .group-avatar { padding: 18px; border-radius: 999px; background: alpha(currentColor, 0.08); }
 "#;
 
