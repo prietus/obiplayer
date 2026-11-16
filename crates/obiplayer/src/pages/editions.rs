@@ -48,6 +48,23 @@ impl EditionsPage {
         ));
         let header_dr = ui::hbox(6);
         sub.append(&header_dr);
+        if ctx.music_dir.is_some() {
+            // DR is computed on demand only (DSD decoding is expensive).
+            let files: Vec<String> = editions
+                .iter()
+                .flat_map(|a| a.tracks.iter().map(|t| t.file.clone()))
+                .collect();
+            let b = gtk::Button::builder()
+                .label(tr("Analyse DR of all editions"))
+                .css_classes(["pill"])
+                .build();
+            let c = ctx.clone();
+            b.connect_clicked(move |b| {
+                c.act(Action::AnalyzeDr(files.clone()));
+                b.set_sensitive(false);
+            });
+            sub.append(&b);
+        }
         body.append(&sub);
 
         body.append(&ui::heading(&format!(
@@ -62,14 +79,6 @@ impl EditionsPage {
         let lw = ui::vbox(4);
         body.append(&lw);
         fill_loudness_war(ctx, &album, &lw);
-
-        // Analyse every edition's tracks (the app queues them).
-        ctx.act(Action::AnalyzeDr(
-            editions
-                .iter()
-                .flat_map(|a| a.tracks.iter().map(|t| t.file.clone()))
-                .collect(),
-        ));
 
         let route = Route::Editions(folder.to_owned());
         let page = EditionsPage {

@@ -235,12 +235,30 @@ impl Page for AlbumPage {
                 self.dr_box.append(&ui::dr_badge(d));
                 self.dr_box.append(&ui::dr_bar(d, 60));
             }
+            None if self.ctx.music_dir.is_some() => {
+                // On demand: only the playing track is analysed automatically.
+                let b = gtk::Button::builder()
+                    .label(tr("Analyse"))
+                    .css_classes(["flat", "caption"])
+                    .tooltip_text(tr("Compute DR14 for every track of this album"))
+                    .build();
+                let (c, files) = (
+                    self.ctx.clone(),
+                    self.album
+                        .tracks
+                        .iter()
+                        .map(|t| t.file.clone())
+                        .collect::<Vec<_>>(),
+                );
+                b.connect_clicked(move |b| {
+                    c.act(Action::AnalyzeDr(files.clone()));
+                    b.set_label(&tr("Analysing…"));
+                    b.set_sensitive(false);
+                });
+                self.dr_box.append(&b);
+            }
             None => self.dr_box.append(&ui::label(
-                &if self.ctx.music_dir.is_some() {
-                    tr("Analysing…")
-                } else {
-                    tr("Needs local files (music_dir)")
-                },
+                &tr("Needs local files (music_dir)"),
                 &["dim-label", "caption"],
             )),
         }

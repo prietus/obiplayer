@@ -36,6 +36,25 @@ fn cache_path(key: &str) -> std::path::PathBuf {
         .join(format!("{}.wf", text::djb2_hex(key)))
 }
 
+/// Cached peaks for an MPD URI.
+pub fn cached(key: &str) -> Option<Vec<f32>> {
+    let b = std::fs::read(cache_path(key)).ok()?;
+    (b.len() == BARS).then(|| b.iter().map(|&v| v as f32 / 255.0).collect())
+}
+
+/// Save peaks (0..=1) in the cache.
+pub fn store(key: &str, peaks: &[f32]) {
+    let cache = cache_path(key);
+    if let Some(dir) = cache.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let bytes: Vec<u8> = peaks
+        .iter()
+        .map(|p| (p.clamp(0.0, 1.0) * 255.0) as u8)
+        .collect();
+    let _ = std::fs::write(&cache, bytes);
+}
+
 /// Peaks for MPD URI `key` whose local file is `path` (cached). Blocking.
 pub fn generate(key: &str, path: &Path) -> Option<Vec<f32>> {
     let cache = cache_path(key);

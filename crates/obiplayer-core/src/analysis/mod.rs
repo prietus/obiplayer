@@ -5,6 +5,7 @@
 
 pub mod dr14;
 pub mod spectrum;
+pub mod track;
 pub mod waveform;
 
 use std::io::Read;
@@ -15,31 +16,57 @@ use crate::probe::find_binary;
 
 /// Sample rate of the first audio stream, via ffprobe.
 pub fn sample_rate(path: &Path) -> Option<u32> {
-    let out = Command::new(find_binary("ffprobe")?)
+    stream_info(path).map(|(r, _)| r)
+}
+
+/// Sample rate and duration (seconds, if known) of the first audio stream.
+pub fn stream_info(path: &Path) -> Option<(u32, Option<f64>)> {
+    let out = low_priority(&find_binary("ffprobe")?)
         .args([
             "-v",
             "quiet",
             "-select_streams",
             "a:0",
             "-show_entries",
-            "stream=sample_rate",
+            "stream=sample_rate,duration:format=duration",
             "-of",
-            "default=noprint_wrappers=1:nokey=1",
+            "default=noprint_wrappers=1",
         ])
         .arg(path)
         .output()
         .ok()?;
-    String::from_utf8_lossy(&out.stdout)
-        .trim()
-        .parse()
-        .ok()
-        .filter(|&r: &u32| r > 0)
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut rate = None;
+    let mut dur = None;
+    for l in text.lines() {
+        match l.split_once('=') {
+            Some(("sample_rate", v)) => rate = v.trim().parse().ok().filter(|&r: &u32| r > 0),
+            Some(("duration", v)) if dur.is_none() => {
+                dur = v.trim().parse().ok().filter(|&d: &f64| d > 0.0)
+            }
+            _ => {}
+        }
+    }
+    Some((rate?, dur))
+}
+
+/// A command for a heavy background job: run under `nice` so decoding never
+/// competes with the UI or anything else on the machine.
+fn low_priority(program: &Path) -> Command {
+    match find_binary("nice") {
+        Some(nice) => {
+            let mut c = Command::new(nice);
+            c.args(["-n", "15"]).arg(program);
+            c
+        }
+        None => Command::new(program),
+    }
 }
 
 /// Spawn ffmpeg decoding `path` to mono raw samples on stdout.
 /// `format` is an ffmpeg sample format (`f32le`, `u8`), `rate` the output rate.
 fn ffmpeg_mono(path: &Path, format: &str, codec: &str, rate: u32) -> Option<Child> {
-    Command::new(find_binary("ffmpeg")?)
+    low_priority(&find_binary("ffmpeg")?)
         .args(["-v", "quiet", "-nostdin", "-i"])
         .arg(path)
         .args([

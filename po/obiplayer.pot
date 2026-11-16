@@ -99,6 +99,14 @@ msgid "all"
 msgstr ""
 
 #: album.rs
+msgid "Analyse"
+msgstr ""
+
+#: editions.rs
+msgid "Analyse DR of all editions"
+msgstr ""
+
+#: album.rs
 msgid "Analysing…"
 msgstr ""
 
@@ -108,6 +116,10 @@ msgstr ""
 
 #: settings.rs
 msgid "Appearance"
+msgstr ""
+
+#: settings.rs
+msgid "Applies after restarting"
 msgstr ""
 
 #: tracks.rs
@@ -260,6 +272,10 @@ msgstr ""
 
 #: group.rs
 msgid "Compositions"
+msgstr ""
+
+#: album.rs
+msgid "Compute DR14 for every track of this album"
 msgstr ""
 
 #: settings.rs
@@ -472,6 +488,10 @@ msgstr ""
 
 #: app.rs
 msgid "labels"
+msgstr ""
+
+#: settings.rs
+msgid "Language"
 msgstr ""
 
 #: settings.rs

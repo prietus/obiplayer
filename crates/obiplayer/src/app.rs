@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use obiplayer_core::analysis::{self, dr14, waveform};
+use obiplayer_core::analysis::{self, dr14};
 use obiplayer_core::catalog::Library;
 use obiplayer_core::config::Config;
 use obiplayer_core::library::{self, Album};
@@ -129,7 +129,8 @@ pub enum Cmd {
     Outputs(Vec<Output>, String),
     DrPrefill(HashMap<String, i32>),
     DrDone(String, Option<i32>),
-    Peaks(String, Option<Vec<f32>>),
+    /// Single-pass analysis of the playing track: DR, peaks, samples.
+    Analysed(String, Option<i32>, Option<Vec<f32>>, Option<Vec<f32>>),
     Samples(String, Option<Vec<f32>>),
     /// Similar artists fetched for a radio batch: (similar, replace queue, files to put first).
     Radio(std::collections::HashMap<String, f64>, bool, Vec<String>),
@@ -486,14 +487,17 @@ impl App {
         let Some(path) = self.ctx.local_path(&file) else {
             return;
         };
-        {
-            let (f, p) = (file.clone(), path.clone());
-            sender.spawn_oneshot_command(move || {
-                let peaks = waveform::generate(&f, &p);
-                Cmd::Peaks(f, peaks)
-            });
+        // One decode for DR + waveform (+ visualizer samples if shown).
+        let want_samples = self.viz_shown || self.np_shown;
+        if want_samples {
+            let mut s = self.ctx.samples.borrow_mut();
+            s.file = Some(file.clone());
+            s.data = None;
         }
-        self.load_samples(sender);
+        sender.spawn_oneshot_command(move || {
+            let a = obiplayer_core::analysis::track::analyze(&file, &path, want_samples);
+            Cmd::Analysed(file, a.dr.map(|d| d.dr), a.peaks, a.samples)
+        });
     }
 
     fn load_samples(&self, sender: &ComponentSender<Self>) {
@@ -560,10 +564,6 @@ impl App {
         let page: Option<Box<dyn Page>> = match &route {
             Route::Album(f) => {
                 self.load_ratings(sender, f.clone());
-                if let Some(a) = self.ctx.lib().album_by_folder(f) {
-                    let files = a.tracks.iter().map(|t| t.file.clone()).collect();
-                    self.queue_dr(sender, files, true);
-                }
                 AlbumPage::new(&self.ctx, f).map(|p| Box::new(p) as _)
             }
             Route::Track(f) => {
@@ -1588,9 +1588,6 @@ impl Component for App {
                 }
                 if new_file != old_file {
                     self.counted = false;
-                    if let Some(f) = new_file {
-                        self.queue_dr(&sender, vec![f], true);
-                    }
                     self.load_track_media(&sender);
                     if self.lyrics_shown {
                         self.lyrics.load(&self.ctx, self.song.as_ref());
@@ -1731,11 +1728,22 @@ impl Component for App {
                 }
                 self.next_dr(&sender);
             }
-            Cmd::Peaks(file, peaks) => {
+            Cmd::Analysed(file, dr, peaks, samples) => {
+                if let Some(d) = dr {
+                    self.ctx.dr.borrow_mut().insert(file.clone(), d);
+                    self.refresh_pages();
+                    self.bar.emit(BarInput::Refresh);
+                }
                 if self.ctx.is_current(&file) {
                     let p = peaks.map(Arc::new);
                     self.nowplaying.waveform.set_peaks(p.clone());
                     self.bar.emit(BarInput::Peaks(p));
+                }
+                if samples.is_some() {
+                    let mut s = self.ctx.samples.borrow_mut();
+                    if s.file.as_deref() == Some(file.as_str()) {
+                        s.data = samples.map(Arc::new);
+                    }
                 }
             }
             Cmd::Radio(similar, replace, first) => {

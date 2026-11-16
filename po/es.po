@@ -1274,3 +1274,18 @@ msgstr "Año"
 #: ui.rs
 msgid "Your version:"
 msgstr "Tu versión:"
+
+msgid "Analyse"
+msgstr "Analizar"
+
+msgid "Compute DR14 for every track of this album"
+msgstr "Calcular el DR14 de todas las pistas de este álbum"
+
+msgid "Analyse DR of all editions"
+msgstr "Analizar el DR de todas las ediciones"
+
+msgid "Language"
+msgstr "Idioma"
+
+msgid "Applies after restarting"
+msgstr "Se aplica al reiniciar"

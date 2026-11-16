@@ -114,6 +114,15 @@ fn parse_cache(s: &str) -> Option<Dr> {
     })
 }
 
+/// Save a result in the cache.
+pub fn store(key: &str, d: &Dr) {
+    let cache = cache_path(key);
+    if let Some(dir) = cache.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(&cache, format!("{},{:.1},{:.1}", d.dr, d.peak_db, d.rms_db));
+}
+
 /// Cached result for an MPD URI (no decoding, local disk only).
 pub fn cached(key: &str) -> Option<Dr> {
     parse_cache(&std::fs::read_to_string(cache_path(key)).ok()?)
