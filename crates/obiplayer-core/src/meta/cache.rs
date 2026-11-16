@@ -56,8 +56,8 @@ impl Cache {
     }
 
     pub fn set(&self, key: &str, value: &str) {
-        if let Err(e) = std::fs::create_dir_all(&self.dir)
-            .and_then(|_| std::fs::write(self.path(key), value))
+        if let Err(e) =
+            std::fs::create_dir_all(&self.dir).and_then(|_| std::fs::write(self.path(key), value))
         {
             tracing::debug!(error = %e, "metadata cache write failed");
         }

@@ -90,15 +90,25 @@ impl Http {
                 None
             }
             Err(e) => {
-                tracing::debug!(%url, error = %e, "metadata request error");
+                // The full URL can carry API keys in its query: never log it.
+                tracing::debug!(%url, error = %e.without_url(), "metadata request error");
                 None
             }
         }
     }
 
     /// GET and return the body text (HTTP 200 only).
-    pub async fn get_text(&self, service: Service, url: &str, query: &[(&str, &str)]) -> Option<String> {
-        self.send(service, url, query, false).await?.text().await.ok()
+    pub async fn get_text(
+        &self,
+        service: Service,
+        url: &str,
+        query: &[(&str, &str)],
+    ) -> Option<String> {
+        self.send(service, url, query, false)
+            .await?
+            .text()
+            .await
+            .ok()
     }
 
     /// GET JSON (HTTP 200 only). Returns the raw text too, for caching.
@@ -108,7 +118,12 @@ impl Http {
         url: &str,
         query: &[(&str, &str)],
     ) -> Option<(serde_json::Value, String)> {
-        let text = self.send(service, url, query, true).await?.text().await.ok()?;
+        let text = self
+            .send(service, url, query, true)
+            .await?
+            .text()
+            .await
+            .ok()?;
         let v = serde_json::from_str(&text).ok()?;
         Some((v, text))
     }

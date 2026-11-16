@@ -13,6 +13,7 @@ pub mod lastfm;
 pub mod loudnesswar;
 pub mod lyrics;
 pub mod musicbrainz;
+pub mod titles;
 pub mod wikipedia;
 
 pub use cache::Cache;
