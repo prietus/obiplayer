@@ -721,8 +721,24 @@ fn appearance_page(st: &Rc<State>) -> adw::PreferencesPage {
             s.save(false);
         });
     }
+    let langs = gtk::StringList::new(&[&tr("Follow system"), "English", "Español"]);
+    let codes = ["system", "en", "es"];
+    let lang = adw::ComboRow::builder()
+        .title(tr("Language"))
+        .subtitle(tr("Applies after restarting"))
+        .model(&langs)
+        .selected(codes.iter().position(|c| *c == cfg.language).unwrap_or(0) as u32)
+        .build();
+    {
+        let s = st.clone();
+        lang.connect_selected_notify(move |r| {
+            s.config.borrow_mut().ui.language = codes[r.selected() as usize].to_owned();
+            s.save(true);
+        });
+    }
     g.add(&scheme);
     g.add(&theme);
+    g.add(&lang);
     page.add(&g);
     page
 }

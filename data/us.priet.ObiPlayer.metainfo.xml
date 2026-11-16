@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>us.priet.ObiPlayer</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>ObiPlayer</name>
+  <summary>MPD client for people who care about editions and sound quality</summary>
+  <summary xml:lang="es">Cliente de MPD para quien cuida las ediciones y la calidad de sonido</summary>
+  <description>
+    <p>ObiPlayer is a music player for MPD, local or remote, built for audiophiles.</p>
+    <ul>
+      <li>Album grid, artists, labels, composers and producers, smart playlists, radio and listening statistics</li>
+      <li>Exact-pressing metadata from MusicBrainz and Discogs, Wikipedia and Last.fm</li>
+      <li>DR14 dynamic range analysis, waveforms, visualizers and a bit-perfect signal path indicator</li>
+      <li>Edition comparison with the Loudness War database, synced lyrics, MPRIS media keys</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">us.priet.ObiPlayer.desktop</launchable>
+  <url type="homepage">https://github.com/prietus/obiplayer</url>
+  <developer id="us.priet"><name>Carlos Prieto</name></developer>
+  <content_rating type="oars-1.1"/>
+  <releases><release version="0.1.0" date="2026-11-16"/></releases>
+</component>

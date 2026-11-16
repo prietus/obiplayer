@@ -4,6 +4,7 @@ mod albums;
 mod app;
 mod covers;
 mod ctx;
+mod i18n;
 mod lyrics_ui;
 mod mpris;
 mod nowplaying;
@@ -26,7 +27,7 @@ const APP_ID: &str = "us.priet.ObiPlayer";
 /// Translation hook. Strings are written in English and will go through
 /// gettext once localisation lands (see docs/PARITY.md).
 pub fn tr(s: &str) -> String {
-    s.to_owned()
+    i18n::tr(s)
 }
 
 const CSS: &str = r#"
@@ -131,6 +132,7 @@ fn main() {
 
     let first_run = !Config::exists();
     let config = Config::load_or_default();
+    i18n::init(&config.ui.language);
     let app = RelmApp::new(APP_ID);
     relm4::set_global_css(CSS);
     let ui = config.ui.clone();

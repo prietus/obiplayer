@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=ObiPlayer
+GenericName=Music Player
+GenericName[es]=Reproductor de música
+Comment=MPD client for people who care about editions and sound quality
+Comment[es]=Cliente de MPD para quien cuida las ediciones y la calidad de sonido
+Exec=obiplayer
+Icon=us.priet.ObiPlayer
+Terminal=false
+Categories=AudioVideo;Audio;Player;GTK;
+Keywords=MPD;music;player;audiophile;DSD;FLAC;bitperfect;
+StartupNotify=true
+DBusActivatable=false

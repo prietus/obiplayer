@@ -1,0 +1,1275 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+#: wizard.rs
+msgid "1. Where does MPD run?"
+msgstr ""
+
+#: wizard.rs
+msgid "2. Prerequisites"
+msgstr ""
+
+#: wizard.rs
+msgid "3. Connection"
+msgstr ""
+
+#: wizard.rs
+msgid "4. MPD configuration"
+msgstr ""
+
+#: wizard.rs
+msgid "5. Music folder on this computer"
+msgstr ""
+
+#: app.rs
+msgid "A music player for MPD, for people who care about editions, pressings and sound quality."
+msgstr ""
+
+#: albuminfo.rs
+msgid "About"
+msgstr ""
+
+#: app.rs
+msgid "About ObiPlayer"
+msgstr ""
+
+#: albuminfo.rs
+msgid "About the album"
+msgstr ""
+
+#: settings.rs
+msgid "Accent colour"
+msgstr ""
+
+#: smart.rs
+msgid "Add rule"
+msgstr ""
+
+#: settings.rs
+msgid "Add source…"
+msgstr ""
+
+#: settings.rs
+msgid "Add to mpd.conf"
+msgstr ""
+
+#: album.rs
+msgid "Add to queue"
+msgstr ""
+
+#: app.rs
+msgid "Added to queue"
+msgstr ""
+
+#: settings.rs
+msgid "Added — restart MPD"
+msgstr ""
+
+#: tracks.rs
+msgid "Album"
+msgstr ""
+
+#: app.rs
+msgid "Albums"
+msgstr ""
+
+#: app.rs
+msgid "albums"
+msgstr ""
+
+#: tasks_ui.rs
+msgid "albums cached"
+msgstr ""
+
+#: producers.rs
+msgid "albums in library"
+msgstr ""
+
+#: tasks_ui.rs
+msgid "albums…"
+msgstr ""
+
+#: producers.rs
+msgid "All"
+msgstr ""
+
+#: smart.rs
+msgid "all"
+msgstr ""
+
+#: album.rs
+msgid "Analysing…"
+msgstr ""
+
+#: smart.rs
+msgid "any"
+msgstr ""
+
+#: settings.rs
+msgid "Appearance"
+msgstr ""
+
+#: tracks.rs
+msgid "Artist"
+msgstr ""
+
+#: app.rs
+msgid "Artists"
+msgstr ""
+
+#: app.rs
+msgid "artists"
+msgstr ""
+
+#: nowplaying.rs
+msgid "Artwork"
+msgstr ""
+
+#: track.rs
+msgid "Audio"
+msgstr ""
+
+#: tasks_ui.rs
+msgid "Audio outputs"
+msgstr ""
+
+#: stats.rs
+msgid "Avg"
+msgstr ""
+
+#: tasks_ui.rs
+msgid "Background tasks"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Barcode"
+msgstr ""
+
+#: album.rs
+msgid "BEST"
+msgstr ""
+
+#: group.rs
+msgid "Biography"
+msgstr ""
+
+#: track.rs
+msgid "Bit depth"
+msgstr ""
+
+#: settings.rs
+msgid "Bit-perfect"
+msgstr ""
+
+#: settings.rs
+msgid "Bit-perfect playback: an ALSA output on the card's hw: device, without mixer or resampling. Restart MPD after editing mpd.conf."
+msgstr ""
+
+#: track.rs
+msgid "Bitrate"
+msgstr ""
+
+#: app.rs
+msgid "Cannot reach MPD at"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Cat."
+msgstr ""
+
+#: album.rs
+msgid "Catalog"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Certified pressing"
+msgstr ""
+
+#: track.rs
+msgid "Channels"
+msgstr ""
+
+#: wizard.rs
+msgid "Choose the music folder first"
+msgstr ""
+
+#: settings.rs
+msgid "Choose…"
+msgstr ""
+
+#: viz.rs
+msgid "Circular"
+msgstr ""
+
+#: theme.rs
+msgid "Classic"
+msgstr ""
+
+#: app.rs
+msgid "Clear filter"
+msgstr ""
+
+#: app.rs
+msgid "Clear queue"
+msgstr ""
+
+#: settings.rs
+msgid "Clears cached genres, covers, thumbnails, avatars and online lookups; they are fetched again with the current keys."
+msgstr ""
+
+#: viz.rs
+msgid "Click to seek"
+msgstr ""
+
+#: nowplaying.rs
+msgid "Close (Esc)"
+msgstr ""
+
+#: track.rs
+msgid "Codec"
+msgstr ""
+
+#: ui.rs
+msgid "Compare DR with other editions on Loudness War DB"
+msgstr ""
+
+#: album.rs
+msgid "Compare editions"
+msgstr ""
+
+#: album.rs
+msgid "Compare versions"
+msgstr ""
+
+#: tasks_ui.rs
+msgid "Completed"
+msgstr ""
+
+#: tracks.rs
+msgid "Composer"
+msgstr ""
+
+#: app.rs
+msgid "Composers"
+msgstr ""
+
+#: app.rs
+msgid "composers"
+msgstr ""
+
+#: group.rs
+msgid "Compositions"
+msgstr ""
+
+#: settings.rs
+msgid "Configured in mpd.conf"
+msgstr ""
+
+#: settings.rs
+msgid "Connected"
+msgstr ""
+
+#: settings.rs
+msgid "Connecting…"
+msgstr ""
+
+#: track.rs
+msgid "Container"
+msgstr ""
+
+#: app.rs
+msgid "Could not load library"
+msgstr ""
+
+#: album.rs
+msgid "Country"
+msgstr ""
+
+#: wizard.rs
+msgid "Created at"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Credits"
+msgstr ""
+
+#: album.rs
+msgid "CURRENT"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Cut by"
+msgstr ""
+
+#: settings.rs
+msgid "Dark"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Date"
+msgstr ""
+
+#: stats.rs
+msgid "day"
+msgstr ""
+
+#: stats.rs
+msgid "Day of week"
+msgstr ""
+
+#: wizard.rs
+msgid "Default (PipeWire)"
+msgstr ""
+
+#: smart.rs
+msgid "Delete"
+msgstr ""
+
+#: albuminfo.rs
+msgid "DETAILS"
+msgstr ""
+
+#: settings.rs
+msgid "Detect"
+msgstr ""
+
+#: settings.rs
+msgid "Discogs consumer key"
+msgstr ""
+
+#: settings.rs
+msgid "Discogs consumer secret"
+msgstr ""
+
+#: settings.rs
+msgid "Done"
+msgstr ""
+
+#: ui.rs
+msgid "DR"
+msgstr ""
+
+#: tasks_ui.rs
+msgid "DR14 analysis"
+msgstr ""
+
+#: tracks.rs
+msgid "Dur."
+msgstr ""
+
+#: album.rs
+msgid "Duration"
+msgstr ""
+
+#: album.rs
+msgid "Dynamic Range"
+msgstr ""
+
+#: player_bar.rs
+msgid "Dynamic range (DR14)"
+msgstr ""
+
+#: ui.rs
+msgid "Edition"
+msgstr ""
+
+#: editions.rs
+msgid "Engineer"
+msgstr ""
+
+#: settings.rs
+msgid "External APIs"
+msgstr ""
+
+#: track.rs
+msgid "File"
+msgstr ""
+
+#: settings.rs
+msgid "folder"
+msgstr ""
+
+#: settings.rs
+msgid "Folder with music"
+msgstr ""
+
+#: settings.rs
+msgid "Folders linked (as symlinks) inside MPD's music_directory. Removing a source only deletes the link, never your files."
+msgstr ""
+
+#: settings.rs
+msgid "Follow system"
+msgstr ""
+
+#: album.rs
+msgid "Format"
+msgstr ""
+
+#: group.rs
+msgid "Formats"
+msgstr ""
+
+#: stats.rs
+msgid "Fri"
+msgstr ""
+
+#: settings.rs
+msgid "General"
+msgstr ""
+
+#: wizard.rs
+msgid "Generate"
+msgstr ""
+
+#: wizard.rs
+msgid "Generate mpd.conf"
+msgstr ""
+
+#: tasks_ui.rs
+msgid "Genre enrichment"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Genres"
+msgstr ""
+
+#: app.rs
+msgid "Home"
+msgstr ""
+
+#: settings.rs
+msgid "Host"
+msgstr ""
+
+#: group.rs
+msgid "In your library"
+msgstr ""
+
+#: wizard.rs
+msgid "Install the missing programs (mpd is only needed for a local server):"
+msgstr ""
+
+#: lyrics_ui.rs
+msgid "Instrumental"
+msgstr ""
+
+#: settings.rs
+msgid "internal"
+msgstr ""
+
+#: app.rs
+msgid "Is the music disk mounted on the server? Run an MPD update and reload."
+msgstr ""
+
+#: album.rs
+msgid "Label"
+msgstr ""
+
+#: app.rs
+msgid "Labels"
+msgstr ""
+
+#: app.rs
+msgid "labels"
+msgstr ""
+
+#: settings.rs
+msgid "Last.fm API key"
+msgstr ""
+
+#: settings.rs
+msgid "Light"
+msgstr ""
+
+#: smart.rs
+msgid "Limit to"
+msgstr ""
+
+#: group.rs
+msgid "listeners"
+msgstr ""
+
+#: stats.rs
+msgid "Listening hours"
+msgstr ""
+
+#: stats.rs
+msgid "listening time"
+msgstr ""
+
+#: tasks_ui.rs
+msgid "live via MPD idle"
+msgstr ""
+
+#: app.rs
+msgid "Load library"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Loading…"
+msgstr ""
+
+#: settings.rs
+msgid "Local path of MPD's music directory (a mount for a remote server). Used for local cover art, artwork galleries, DR analysis, waveforms, visualizers and technical file details."
+msgstr ""
+
+#: lyrics_ui.rs
+msgid "Lyrics"
+msgstr ""
+
+#: app.rs
+msgid "Main menu"
+msgstr ""
+
+#: settings.rs
+msgid "Maintenance"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Mastered by"
+msgstr ""
+
+#: album.rs
+msgid "Mastering"
+msgstr ""
+
+#: smart.rs
+msgid "Match"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Matrix"
+msgstr ""
+
+#: ui.rs
+msgid "Max"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Members"
+msgstr ""
+
+#: ui.rs
+msgid "Min"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Min. price"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Mixed at"
+msgstr ""
+
+#: album.rs
+msgid "Mixer"
+msgstr ""
+
+#: stats.rs
+msgid "Mon"
+msgstr ""
+
+#: theme.rs
+msgid "Mono"
+msgstr ""
+
+#: album.rs
+msgid "More"
+msgstr ""
+
+#: smart.rs
+msgid "more"
+msgstr ""
+
+#: settings.rs
+msgid "MPD connection"
+msgstr ""
+
+#: settings.rs
+msgid "MPD is running on"
+msgstr ""
+
+#: settings.rs
+msgid "MPD music folder"
+msgstr ""
+
+#: settings.rs
+msgid "MPD outputs"
+msgstr ""
+
+#: wizard.rs
+msgid "MPD server"
+msgstr ""
+
+#: app.rs
+msgid "MPD's library is empty"
+msgstr ""
+
+#: wizard.rs
+msgid "MPD's music directory as seen from here — for a remote server, where its share is mounted (NFS/SMB). Optional, but needed for local covers, DR analysis, waveforms and visualizers."
+msgstr ""
+
+#: wizard.rs
+msgid "mpd.conf detected"
+msgstr ""
+
+#: settings.rs
+msgid "MPD_HOST / MPD_PORT environment variables take precedence"
+msgstr ""
+
+#: settings.rs
+msgid "Music folder"
+msgstr ""
+
+#: settings.rs
+msgid "Music library on this computer"
+msgstr ""
+
+#: settings.rs
+msgid "Music sources"
+msgstr ""
+
+#: settings.rs
+msgid "Music sources and mpd.conf are managed on the server. Playback, queue, outputs and database updates work over the network."
+msgstr ""
+
+#: editions.rs
+msgid "My versions"
+msgstr ""
+
+#: signal_ui.rs
+msgid "native DSD"
+msgstr ""
+
+#: album.rs
+msgid "Needs local files (music_dir)"
+msgstr ""
+
+#: smart.rs
+msgid "New playlist"
+msgstr ""
+
+#: nowplaying.rs
+msgid "Next"
+msgstr ""
+
+#: nowplaying.rs
+msgid "Next image"
+msgstr ""
+
+#: signal_ui.rs
+msgid "No active output"
+msgstr ""
+
+#: albuminfo.rs
+msgid "No additional information"
+msgstr ""
+
+#: editions.rs
+msgid "No data found in Loudness War DB for this album"
+msgstr ""
+
+#: signal_ui.rs
+msgid "No data from MPD"
+msgstr ""
+
+#: stats.rs
+msgid "No label data"
+msgstr ""
+
+#: app.rs
+msgid "No library loaded"
+msgstr ""
+
+#: lyrics_ui.rs
+msgid "No lyrics available"
+msgstr ""
+
+#: signal_ui.rs
+msgid "no mixer"
+msgstr ""
+
+#: wizard.rs
+msgid "No mpd.conf found. Generate a basic bit-perfect one in ~/.config/mpd (ALSA output on your card, no mixer, no resampling, plus a FIFO for the visualizer)."
+msgstr ""
+
+#: settings.rs
+msgid "No mpd.conf with a music_directory found. Use the setup assistant to generate one."
+msgstr ""
+
+#: stats.rs
+msgid "No play data yet"
+msgstr ""
+
+#: signal_ui.rs
+msgid "No processing"
+msgstr ""
+
+#: producers.rs
+msgid "No producer data yet"
+msgstr ""
+
+#: search.rs
+msgid "No results for"
+msgstr ""
+
+#: smart.rs
+msgid "No tracks match these rules"
+msgstr ""
+
+#: wizard.rs
+msgid "not found"
+msgstr ""
+
+#: app.rs
+msgid "Not found in the library"
+msgstr ""
+
+#: settings.rs
+msgid "Not found — mount the server's music share and try again, or choose it"
+msgstr ""
+
+#: wizard.rs
+msgid "Not found — mount the server's music share first, or choose it"
+msgstr ""
+
+#: home.rs
+msgid "Not played yet"
+msgstr ""
+
+#: nowplaying.rs
+msgid "Not playing"
+msgstr ""
+
+#: settings.rs
+msgid "Not set"
+msgstr ""
+
+#: stats.rs
+msgid "now"
+msgstr ""
+
+#: player_bar.rs
+msgid "Now playing (full window)"
+msgstr ""
+
+#: smart.rs
+msgid "of the following rules:"
+msgstr ""
+
+#: wizard.rs
+msgid "On another machine"
+msgstr ""
+
+#: tasks_ui.rs
+msgid "On demand"
+msgstr ""
+
+#: wizard.rs
+msgid "On this computer"
+msgstr ""
+
+#: editions.rs
+msgid "Open in browser"
+msgstr ""
+
+#: settings.rs
+msgid "Optional. Last.fm adds artist bios, tags and similar artists (last.fm/api/account/create); Discogs adds physical edition details (discogs.com/settings/developers). Keys are stored in your configuration file only."
+msgstr ""
+
+#: album.rs
+msgid "Original"
+msgstr ""
+
+#: player_bar.rs
+msgid "Oscilloscope"
+msgstr ""
+
+#: album.rs
+msgid "Other editions"
+msgstr ""
+
+#: track.rs
+msgid "Other versions"
+msgstr ""
+
+#: signal_ui.rs
+msgid "Output"
+msgstr ""
+
+#: tasks_ui.rs
+msgid "outputs"
+msgstr ""
+
+#: settings.rs
+msgid "Outputs are defined in mpd.conf; here you can enable or disable them."
+msgstr ""
+
+#: settings.rs
+msgid "Password (optional)"
+msgstr ""
+
+#: track.rs
+msgid "Path"
+msgstr ""
+
+#: stats.rs
+msgid "Peak listening:"
+msgstr ""
+
+#: tasks_ui.rs
+msgid "pending"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Physical edition (Discogs)"
+msgstr ""
+
+#: nowplaying.rs
+msgid "Play"
+msgstr ""
+
+#: smart.rs
+msgid "Play all"
+msgstr ""
+
+#: player_bar.rs
+msgid "Play queue"
+msgstr ""
+
+#: home.rs
+msgid "Play some music: recently played albums and your favourite genres will appear here."
+msgstr ""
+
+#: app.rs
+msgid "Play something first to start a radio"
+msgstr ""
+
+#: group.rs
+msgid "plays"
+msgstr ""
+
+#: settings.rs
+msgid "Port"
+msgstr ""
+
+#: app.rs
+msgid "Preferences"
+msgstr ""
+
+#: album.rs
+msgid "PREFERRED"
+msgstr ""
+
+#: app.rs
+msgid "Preferred version set"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Pressed at"
+msgstr ""
+
+#: nowplaying.rs
+msgid "Previous"
+msgstr ""
+
+#: nowplaying.rs
+msgid "Previous image"
+msgstr ""
+
+#: tasks_ui.rs
+msgid "Processing"
+msgstr ""
+
+#: editions.rs
+msgid "Producer"
+msgstr ""
+
+#: producers.rs
+msgid "Producer credits come from MusicBrainz. Open albums to fetch their credits."
+msgstr ""
+
+#: app.rs
+msgid "Producers"
+msgstr ""
+
+#: producers.rs
+msgid "producers"
+msgstr ""
+
+#: settings.rs
+msgid "Purge"
+msgstr ""
+
+#: settings.rs
+msgid "Purge metadata caches"
+msgstr ""
+
+#: editions.rs
+msgid "Querying Loudness War DB…"
+msgstr ""
+
+#: app.rs
+msgid "Queue"
+msgstr ""
+
+#: player_bar.rs
+msgid "Radio"
+msgstr ""
+
+#: app.rs
+msgid "Radio on"
+msgstr ""
+
+#: app.rs
+msgid "Radio: nothing similar found in the library"
+msgstr ""
+
+#: album.rs
+msgid "Radio: play this album, then similar music"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Read more on Wikipedia"
+msgstr ""
+
+#: home.rs
+msgid "Recently played"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Recorded at"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Release (MusicBrainz)"
+msgstr ""
+
+#: app.rs
+msgid "Reload library"
+msgstr ""
+
+#: smart.rs
+msgid "Remove rule"
+msgstr ""
+
+#: settings.rs
+msgid "Remove source (only deletes the symlink)"
+msgstr ""
+
+#: nowplaying.rs
+msgid "Repeat"
+msgstr ""
+
+#: player_bar.rs
+msgid "Repeat: off"
+msgstr ""
+
+#: settings.rs
+msgid "Rescan the music folder for new or changed files"
+msgstr ""
+
+#: settings.rs
+msgid "Restart now"
+msgstr ""
+
+#: settings.rs
+msgid "Restart ObiPlayer to apply connection and API changes"
+msgstr ""
+
+#: track.rs
+msgid "Sample format"
+msgstr ""
+
+#: track.rs
+msgid "Sample rate"
+msgstr ""
+
+#: stats.rs
+msgid "Sat"
+msgstr ""
+
+#: producers.rs
+msgid "Scanning…"
+msgstr ""
+
+#: search.rs
+msgid "Search"
+msgstr ""
+
+#: app.rs
+msgid "Search (Ctrl+F)"
+msgstr ""
+
+#: search.rs
+msgid "Search artists, albums, tracks…"
+msgstr ""
+
+#: browse.rs
+msgid "Search artists…"
+msgstr ""
+
+#: browse.rs
+msgid "Search composers…"
+msgstr ""
+
+#: browse.rs
+msgid "Search labels…"
+msgstr ""
+
+#: producers.rs
+msgid "Search producers…"
+msgstr ""
+
+#: tracks.rs
+msgid "Search tracks…"
+msgstr ""
+
+#: settings.rs
+msgid "Searching network mounts…"
+msgstr ""
+
+#: smart.rs
+msgid "Select or create a smart playlist"
+msgstr ""
+
+#: settings.rs
+msgid "Server"
+msgstr ""
+
+#: album.rs
+msgid "Set as preferred version"
+msgstr ""
+
+#: wizard.rs
+msgid "Set up ObiPlayer"
+msgstr ""
+
+#: app.rs
+msgid "Setup assistant"
+msgstr ""
+
+#: player_bar.rs
+msgid "Show album"
+msgstr ""
+
+#: nowplaying.rs
+msgid "Shuffle"
+msgstr ""
+
+#: signal_ui.rs
+msgid "Signal path"
+msgstr ""
+
+#: group.rs
+msgid "Similar artists"
+msgstr ""
+
+#: albuminfo.rs
+msgid "since"
+msgstr ""
+
+#: track.rs
+msgid "Size"
+msgstr ""
+
+#: app.rs
+msgid "Smart"
+msgstr ""
+
+#: settings.rs
+msgid "Sound cards"
+msgstr ""
+
+#: editions.rs
+msgid "Source"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Source:"
+msgstr ""
+
+#: viz.rs
+msgid "Spectrum"
+msgstr ""
+
+#: wizard.rs
+msgid "Start"
+msgstr ""
+
+#: wizard.rs
+msgid "start MPD with: systemctl --user enable --now mpd"
+msgstr ""
+
+#: settings.rs
+msgid "Started"
+msgstr ""
+
+#: app.rs
+msgid "Stats"
+msgstr ""
+
+#: stats.rs
+msgid "Stats will appear here as you listen to music"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Status"
+msgstr ""
+
+#: player_bar.rs
+msgid "Stop"
+msgstr ""
+
+#: settings.rs
+msgid "Style"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Styles"
+msgstr ""
+
+#: stats.rs
+msgid "Sun"
+msgstr ""
+
+#: lyrics_ui.rs
+msgid "Synced"
+msgstr ""
+
+#: settings.rs
+msgid "System accent"
+msgstr ""
+
+#: track.rs
+msgid "Tags"
+msgstr ""
+
+#: settings.rs
+msgid "Test"
+msgstr ""
+
+#: settings.rs
+msgid "Test connection"
+msgstr ""
+
+#: settings.rs
+msgid "Test keys"
+msgstr ""
+
+#: settings.rs
+msgid "Testing…"
+msgstr ""
+
+#: stats.rs
+msgid "Thu"
+msgstr ""
+
+#: tracks.rs
+msgid "Title"
+msgstr ""
+
+#: stats.rs
+msgid "Top albums"
+msgstr ""
+
+#: stats.rs
+msgid "Top artists"
+msgstr ""
+
+#: stats.rs
+msgid "Top labels"
+msgstr ""
+
+#: stats.rs
+msgid "Top tracks"
+msgstr ""
+
+#: stats.rs
+msgid "Total listening time"
+msgstr ""
+
+#: app.rs
+msgid "Tracks"
+msgstr ""
+
+#: app.rs
+msgid "tracks"
+msgstr ""
+
+#: tasks_ui.rs
+msgid "tracks cached"
+msgstr ""
+
+#: smart.rs
+msgid "tracks matched"
+msgstr ""
+
+#: stats.rs
+msgid "Tue"
+msgstr ""
+
+#: search.rs
+msgid "Type to search"
+msgstr ""
+
+#: lyrics_ui.rs
+msgid "Unsynced"
+msgstr ""
+
+#: settings.rs
+msgid "Update"
+msgstr ""
+
+#: settings.rs
+msgid "Update MPD database"
+msgstr ""
+
+#: app.rs
+msgid "Updating MPD database…"
+msgstr ""
+
+#: wizard.rs
+msgid "Uses the music folder chosen below"
+msgstr ""
+
+#: albuminfo.rs
+msgid "View on Discogs"
+msgstr ""
+
+#: theme.rs
+msgid "Vinyl"
+msgstr ""
+
+#: nowplaying.rs
+msgid "Visualizer"
+msgstr ""
+
+#: signal_ui.rs
+msgid "volume"
+msgstr ""
+
+#: theme.rs
+msgid "Warm"
+msgstr ""
+
+#: tasks_ui.rs
+msgid "Waveforms"
+msgstr ""
+
+#: stats.rs
+msgid "Wed"
+msgstr ""
+
+#: producers.rs
+msgid "Wikipedia"
+msgstr ""
+
+#: albuminfo.rs
+msgid "Year"
+msgstr ""
+
+#: ui.rs
+msgid "Your version:"
+msgstr ""

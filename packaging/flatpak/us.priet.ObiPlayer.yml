@@ -1,0 +1,45 @@
+# flatpak-builder --user --install build packaging/flatpak/us.priet.ObiPlayer.yml
+# Offline builds need vendored crates (flatpak-cargo-generator → cargo-sources.json).
+app-id: us.priet.ObiPlayer
+runtime: org.gnome.Platform
+runtime-version: '48'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.ffmpeg-full
+command: obiplayer
+finish-args:
+  - --share=ipc
+  - --share=network            # MPD, metadata services
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --own-name=org.mpris.MediaPlayer2.obiplayer
+  - --filesystem=home:ro       # local music folder / mounts
+  - --filesystem=/mnt:ro
+  - --filesystem=/media:ro
+  - --filesystem=/run/media:ro
+  - --filesystem=xdg-config/mpd:create   # setup assistant writes mpd.conf
+  - --talk-name=org.freedesktop.FileManager1
+add-extensions:
+  org.freedesktop.Platform.ffmpeg-full:
+    directory: lib/ffmpeg
+    version: '24.08'
+    add-ld-path: .
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/obiplayer/cargo
+modules:
+  - name: obiplayer
+    buildsystem: simple
+    build-commands:
+      - cargo --offline build --release -p obiplayer
+      - install -Dm755 target/release/obiplayer /app/bin/obiplayer
+      - install -Dm644 data/us.priet.ObiPlayer.desktop /app/share/applications/us.priet.ObiPlayer.desktop
+      - install -Dm644 data/us.priet.ObiPlayer.svg /app/share/icons/hicolor/scalable/apps/us.priet.ObiPlayer.svg
+      - install -Dm644 data/us.priet.ObiPlayer.metainfo.xml /app/share/metainfo/us.priet.ObiPlayer.metainfo.xml
+    sources:
+      - type: dir
+        path: ../..
+      - cargo-sources.json

@@ -23,6 +23,8 @@ pub struct UiConfig {
     pub theme: String,
     /// "system", "light", "dark".
     pub color_scheme: String,
+    /// "system" (follow the locale), "en", "es".
+    pub language: String,
 }
 
 impl Default for UiConfig {
@@ -30,6 +32,7 @@ impl Default for UiConfig {
         UiConfig {
             theme: "System".into(),
             color_scheme: "system".into(),
+            language: "system".into(),
         }
     }
 }

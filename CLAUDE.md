@@ -26,6 +26,10 @@ cargo run -p obiplayer-core --example mpdcli -- status|watch|queue|outputs|stats
 cargo clippy --all-targets && cargo fmt
 ```
 
+## Traducciones y empaquetado
+- Las cadenas de la UI van en inglés dentro de `tr("…")` (o de los helpers `icon_button`, `InfoGrid::text`…). Tras añadir cadenas: `python3 scripts/extract_strings.py` y traducirlas en `po/es.po` (se embebe al compilar).
+- Paquete Arch: `packaging/arch/PKGBUILD` (probado en la VM). Flatpak: `packaging/flatpak/`.
+
 ## Reglas
 - Toda orden MPD se construye con `Command::arg` (escapa siempre). Nada de formatear strings a mano.
 - Los `ACK` se propagan como `Error::Ack`; solo se ignoran explícitamente (p. ej. sticker inexistente, código 50).
