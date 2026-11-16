@@ -26,6 +26,7 @@ struct Inner {
 enum Request<'a> {
     One(&'a Command),
     List(&'a [Command]),
+    Binary(&'a Command),
 }
 
 impl Client {
@@ -55,6 +56,10 @@ impl Client {
     }
 
     async fn request(&self, req: Request<'_>) -> Result<Vec<Pair>> {
+        self.request_full(req).await.map(|(p, _)| p)
+    }
+
+    async fn request_full(&self, req: Request<'_>) -> Result<(Vec<Pair>, Vec<u8>)> {
         let mut guard = self.inner.conn.lock().await;
         let mut retried = false;
         loop {
@@ -63,8 +68,9 @@ impl Client {
                 None => guard.insert(Connection::connect(&self.inner.cfg).await?),
             };
             let res = match req {
-                Request::One(c) => conn.execute(c).await,
-                Request::List(cs) => conn.execute_list(cs).await,
+                Request::One(c) => conn.execute(c).await.map(|p| (p, Vec::new())),
+                Request::List(cs) => conn.execute_list(cs).await.map(|p| (p, Vec::new())),
+                Request::Binary(c) => conn.execute_binary(c).await,
             };
             match res {
                 Err(e) if e.is_connection_error() => {
@@ -284,6 +290,44 @@ impl Client {
 
     pub async fn toggle_output(&self, id: u32) -> Result<()> {
         self.simple(Command::new("toggleoutput").arg(id)).await
+    }
+
+    // -- Artwork ------------------------------------------------------------
+
+    /// Cover image for a song: the cover file in its directory (`albumart`),
+    /// falling back to a picture embedded in the file (`readpicture`).
+    /// Works with remote servers, no local mount needed.
+    pub async fn cover_art(&self, uri: &str) -> Result<Option<Vec<u8>>> {
+        for cmd in ["albumart", "readpicture"] {
+            match self.read_binary(cmd, uri).await {
+                Ok(Some(data)) => return Ok(Some(data)),
+                Ok(None) => {}
+                Err(Error::Ack(a)) if a.code == Ack::NO_EXIST || a.code == Ack::UNKNOWN => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(None)
+    }
+
+    async fn read_binary(&self, cmd: &str, uri: &str) -> Result<Option<Vec<u8>>> {
+        let mut data = Vec::new();
+        loop {
+            let c = Command::new(cmd).arg(uri).arg(data.len());
+            let (pairs, chunk) = self.request_full(Request::Binary(&c)).await?;
+            let size: Option<usize> = pairs
+                .iter()
+                .find(|(k, _)| k == "size")
+                .and_then(|(_, v)| v.parse().ok());
+            let Some(size) = size else { return Ok(None) };
+            if chunk.is_empty() {
+                // Defensive: never loop forever on a misbehaving server.
+                return Ok((!data.is_empty()).then_some(data));
+            }
+            data.extend_from_slice(&chunk);
+            if data.len() >= size {
+                return Ok(Some(data));
+            }
+        }
     }
 
     // -- Stickers (song) ----------------------------------------------------

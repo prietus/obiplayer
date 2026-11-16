@@ -25,6 +25,12 @@ async fn fake_mpd(scripts: Vec<Script>) -> (ConnectConfig, JoinHandle<()>) {
                 for want in expected.lines() {
                     let mut line = String::new();
                     r.read_line(&mut line).await.unwrap();
+                    // Every connection negotiates a binary limit; accept it.
+                    while line.starts_with("binarylimit ") {
+                        w.write_all(b"OK\n").await.unwrap();
+                        line.clear();
+                        r.read_line(&mut line).await.unwrap();
+                    }
                     assert_eq!(line.trim_end_matches('\n'), want);
                 }
                 w.write_all(response.as_bytes()).await.unwrap();
@@ -191,5 +197,38 @@ async fn watch_reports_changes_and_reconnects() {
         .await
         .unwrap()
         .unwrap();
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn cover_art_is_read_in_chunks_with_fallback() {
+    let (cfg, server) = fake_mpd(vec![vec![
+        // No cover file for the first song, embedded picture instead.
+        (
+            r#"albumart "a/1.flac" "0""#,
+            "ACK [50@0] {albumart} No file exists\n",
+        ),
+        (
+            r#"readpicture "a/1.flac" "0""#,
+            "size: 6\ntype: image/png\nbinary: 4\nabcd\nOK\n",
+        ),
+        (
+            r#"readpicture "a/1.flac" "4""#,
+            "size: 6\ntype: image/png\nbinary: 2\nef\nOK\n",
+        ),
+        // Nothing at all for the second.
+        (
+            r#"albumart "b/2.flac" "0""#,
+            "ACK [50@0] {albumart} No file exists\n",
+        ),
+        (r#"readpicture "b/2.flac" "0""#, "OK\n"),
+    ]])
+    .await;
+    let c = Client::new(cfg);
+    assert_eq!(
+        c.cover_art("a/1.flac").await.unwrap().as_deref(),
+        Some(&b"abcdef"[..])
+    );
+    assert_eq!(c.cover_art("b/2.flac").await.unwrap(), None);
     server.await.unwrap();
 }

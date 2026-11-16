@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::time::timeout;
@@ -8,6 +8,8 @@ use tokio::time::timeout;
 use super::error::{Ack, Error, Result};
 use super::idle::Subsystem;
 use super::protocol::{Command, Pair, parse_pair};
+
+const BINARY_LIMIT: u32 = 1 << 20;
 
 /// Where and how to reach MPD.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,6 +110,15 @@ impl Connection {
         if let Some(pw) = &cfg.password {
             conn.execute(&Command::new("password").arg(pw)).await?;
         }
+        // Larger binary chunks make `albumart` far faster (MPD >= 0.22.4).
+        // Older servers reject it; that is harmless.
+        if let Err(e) = conn
+            .execute(&Command::new("binarylimit").arg(BINARY_LIMIT))
+            .await
+            && e.is_connection_error()
+        {
+            return Err(e);
+        }
         Ok(conn)
     }
 
@@ -122,6 +133,18 @@ impl Connection {
         let fut = async {
             self.send(cmd.line()).await?;
             self.read_response().await
+        };
+        timeout(limit, fut).await.map_err(|_| Error::Timeout)?
+    }
+
+    /// Run a command whose response may carry a binary payload
+    /// (`albumart`, `readpicture`).
+    pub async fn execute_binary(&mut self, cmd: &Command) -> Result<(Vec<Pair>, Vec<u8>)> {
+        cmd.validate()?;
+        let limit = self.timeout;
+        let fut = async {
+            self.send(cmd.line()).await?;
+            self.read_response_full().await
         };
         timeout(limit, fut).await.map_err(|_| Error::Timeout)?
     }
@@ -177,11 +200,16 @@ impl Connection {
     }
 
     async fn read_response(&mut self) -> Result<Vec<Pair>> {
+        Ok(self.read_response_full().await?.0)
+    }
+
+    async fn read_response_full(&mut self) -> Result<(Vec<Pair>, Vec<u8>)> {
         let mut pairs = Vec::new();
+        let mut binary = Vec::new();
         loop {
             let line = self.read_line().await?;
             if line == "OK" {
-                return Ok(pairs);
+                return Ok((pairs, binary));
             }
             if line.starts_with("ACK ") {
                 return Err(Ack::parse(&line)
@@ -192,6 +220,18 @@ impl Connection {
                 continue;
             }
             match parse_pair(&line) {
+                Some((k, v)) if k == "binary" => {
+                    let n: usize = v
+                        .parse()
+                        .map_err(|_| Error::Protocol(format!("bad binary size {v:?}")))?;
+                    let start = binary.len();
+                    binary.resize(start + n, 0);
+                    self.reader.read_exact(&mut binary[start..]).await?;
+                    // The payload is followed by a single newline.
+                    if !self.read_line().await?.is_empty() {
+                        return Err(Error::Protocol("missing newline after binary".into()));
+                    }
+                }
                 Some(p) => pairs.push(p),
                 None => return Err(Error::Protocol(format!("unexpected line {line:?}"))),
             }

@@ -7,7 +7,14 @@ Port a Linux (Rust + GTK4/libadwaita) de DrPlayer (`~/drplayer`, SwiftUI + MPD),
 
 ## Estructura
 - `crates/obiplayer-core` — sin GTK: cliente MPD (`mpd/`), y en adelante biblioteca, análisis y metadatos.
-- `crates/obiplayer` — app GTK. Tokio corre en su runtime (`runtime()`); GTK en el hilo principal; los resultados vuelven con `on_tokio(fut).await` dentro de `glib::spawn_future_local`. Eventos de servidor vía `mpd::watch` → `async_channel`.
+- `crates/obiplayer` — app GTK con Relm4 (usar `relm4::gtk`/`relm4::adw`, no dependencias directas). Las órdenes MPD van como `sender.oneshot_command` (runtime tokio de Relm4); eventos del servidor vía `mpd::watch` → `async_channel` → `AppMsg::Mpd`. Listas grandes con `TypedGridView`/`TypedListView` (virtualizadas; la cola real tiene >5000 pistas).
+
+## Configuración
+`~/.config/obiplayer/config.toml` (se crea con valores por defecto): `[mpd] host/port/password`, `[library] music_dir` (ruta local de la biblioteca; si falta, las portadas se piden a MPD). `MPD_HOST`/`MPD_PORT` tienen prioridad.
+
+## Pruebas
+- Servidor MPD real del usuario: `192.0.2.10:6600` (sonando en un DAC; usar solo órdenes de lectura salvo que pida otra cosa).
+- VM Linux: `ssh user@192.0.2.21` (Arch ARM, Wayland/river, `grim` para capturas). Copiar fuentes con `git ls-files -co --exclude-standard | tar -czf - -T - | ssh … 'tar -xzf - -C obiplayer'` (no hay rsync).
 
 ## Comandos
 ```
