@@ -78,12 +78,29 @@ impl Http {
         query: &[(&str, &str)],
         accept_json: bool,
     ) -> Option<reqwest::Response> {
-        self.throttle(service).await;
-        let mut req = self.client.get(url).query(query);
-        if accept_json {
-            req = req.header(reqwest::header::ACCEPT, "application/json");
+        for attempt in 0..2 {
+            self.throttle(service).await;
+            let mut req = self.client.get(url).query(query);
+            if accept_json {
+                req = req.header(reqwest::header::ACCEPT, "application/json");
+            }
+            let res = req.send().await;
+            // MusicBrainz answers 503 when busy; one polite retry.
+            if attempt == 0
+                && let Ok(r) = &res
+                && r.status() == StatusCode::SERVICE_UNAVAILABLE
+                && service == Service::MusicBrainz
+            {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
+            }
+            return Self::accept(url, res);
         }
-        match req.send().await {
+        None
+    }
+
+    fn accept(url: &str, res: reqwest::Result<reqwest::Response>) -> Option<reqwest::Response> {
+        match res {
             Ok(r) if r.status() == StatusCode::OK => Some(r),
             Ok(r) => {
                 tracing::debug!(%url, status = %r.status(), "metadata request failed");

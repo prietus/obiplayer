@@ -8,16 +8,21 @@
 
 pub mod cache;
 pub mod discogs;
+pub mod genres;
 pub mod http;
+pub mod images;
 pub mod lastfm;
 pub mod loudnesswar;
 pub mod lyrics;
 pub mod musicbrainz;
+pub mod release;
+pub mod services;
 pub mod titles;
 pub mod wikipedia;
 
 pub use cache::Cache;
 pub use http::{Http, Service};
+pub use services::Services;
 
 /// API credentials from the user's configuration.
 #[derive(Debug, Clone, Default)]
