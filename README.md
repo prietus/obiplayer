@@ -10,8 +10,6 @@
   GTK4 · libadwaita · Rust · Linux
 </p>
 
-<!-- VIDEO -->
-
 <p align="center">
   <img src="docs/media/album.png" alt="Album page (A Day at the Races, Japanese SACD): label, catalogue number and credits for the exact pressing from MusicBrainz and Discogs, Wikipedia, certified-pressing card and artwork">
   <br><em>The exact pressing: credits, catalogue number and country cross-checked with MusicBrainz and Discogs, DR14, certified pressing card</em>
@@ -27,7 +25,8 @@
     <td><img src="docs/media/producers.png" alt="Producers and engineers across the library"><br><em>Producers, engineers and mastering credits across the library</em></td>
   </tr>
   <tr>
-    <td colspan="2"><img src="docs/media/stats.png" alt="Listening statistics"><br><em>Listening statistics</em></td>
+    <td><img src="docs/media/stats.png" alt="Listening statistics"><br><em>Listening statistics</em></td>
+    <td><img src="docs/media/preferences.png" alt="Preferences: MPD connection, music folder detection, Last.fm and Discogs keys"><br><em>Preferences: connection, music folder detection on network mounts, API keys</em></td>
   </tr>
 </table>
 
