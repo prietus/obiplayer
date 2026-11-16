@@ -13,7 +13,7 @@
 <!-- VIDEO -->
 
 <p align="center">
-  <img src="docs/media/album.png" alt="Album page: the exact pressing's label, catalogue number and credits from MusicBrainz and Discogs, Wikipedia, DR14 and a certified-pressing card">
+  <img src="docs/media/album.png" alt="Album page (A Day at the Races, Japanese SACD): label, catalogue number and credits for the exact pressing from MusicBrainz and Discogs, Wikipedia, certified-pressing card and artwork">
   <br><em>The exact pressing: credits, catalogue number and country cross-checked with MusicBrainz and Discogs, DR14, certified pressing card</em>
 </p>
 
