@@ -368,3 +368,190 @@ pub fn dr_bar(dr: i32, width: i32) -> gtk::LevelBar {
     }
     b
 }
+
+/// Open a URL in the default browser.
+pub fn open_uri(url: &str) {
+    gtk::UriLauncher::new(url).launch(None::<&gtk::Window>, gtk::gio::Cancellable::NONE, |_| {});
+}
+
+pub fn uri_button(label: &str, url: String) -> gtk::Button {
+    let b = gtk::Button::builder()
+        .label(label)
+        .halign(gtk::Align::Start)
+        .css_classes(["flat", "caption", "link-pill"])
+        .tooltip_text(url.as_str())
+        .build();
+    b.connect_clicked(move |_| open_uri(&url));
+    b
+}
+
+/// Round artist photo, loaded (and downloaded if needed) asynchronously.
+pub fn avatar(ctx: &Rc<Ctx>, name: &str, size: i32) -> gtk::Overlay {
+    let placeholder = gtk::Image::builder()
+        .icon_name("avatar-default-symbolic")
+        .pixel_size((size / 2).max(16))
+        .css_classes(["dim-label"])
+        .build();
+    let picture = gtk::Picture::builder()
+        .content_fit(gtk::ContentFit::Cover)
+        .width_request(size)
+        .height_request(size)
+        .build();
+    let frame = gtk::Overlay::builder()
+        .width_request(size)
+        .height_request(size)
+        .halign(gtk::Align::Start)
+        .valign(gtk::Align::Center)
+        .overflow(gtk::Overflow::Hidden)
+        .css_classes(["avatar-frame"])
+        .build();
+    frame.set_child(Some(&placeholder));
+    frame.add_overlay(&picture);
+    let (pic, ph, s, n) = (picture, placeholder, ctx.services.clone(), name.to_owned());
+    let px = (size * 2).max(64);
+    relm4::spawn_local(async move {
+        let path = match obiplayer_core::meta::images::cached_avatar(&n) {
+            Some(p) => Some(p),
+            None => relm4::spawn(async move { obiplayer_core::meta::images::avatar(&s, &n).await })
+                .await
+                .ok()
+                .flatten(),
+        };
+        if let Some(p) = path
+            && let Some(t) = crate::covers::load_file_texture(p, px).await
+        {
+            pic.set_paintable(Some(&t));
+            ph.set_visible(false);
+        }
+    });
+    frame
+}
+
+/// DR badge that opens a Loudness War DB comparison for the album.
+pub fn dr_compare_button(ctx: &Rc<Ctx>, artist: &str, album: &str, my_dr: i32) -> gtk::MenuButton {
+    use obiplayer_core::meta::loudnesswar;
+
+    let pop = gtk::Popover::new();
+    let content = vbox(6);
+    content.set_margin_top(8);
+    content.set_margin_bottom(8);
+    content.set_margin_start(8);
+    content.set_margin_end(8);
+    content.set_width_request(480);
+    pop.set_child(Some(&content));
+    let loaded = Rc::new(std::cell::Cell::new(false));
+    let (c, a, al) = (ctx.clone(), artist.to_owned(), album.to_owned());
+    pop.connect_show(move |_| {
+        if loaded.replace(true) {
+            return;
+        }
+        clear(&content);
+        let head = hbox(8);
+        let t = label(&tr("Dynamic Range"), &["heading"]);
+        t.set_hexpand(true);
+        head.append(&t);
+        head.append(&label(&tr("Your version:"), &["dim-label", "caption"]));
+        head.append(&dr_badge(my_dr));
+        content.append(&head);
+        let body = vbox(4);
+        let row = hbox(8);
+        row.append(&gtk::Spinner::builder().spinning(true).build());
+        row.append(&label(&tr("Querying Loudness War DB…"), &["dim-label"]));
+        body.append(&row);
+        content.append(&body);
+        let foot = hbox(8);
+        let src = label(
+            "dr.loudness-war.info",
+            &["dim-label", "caption", "source-note"],
+        );
+        src.set_hexpand(true);
+        foot.append(&src);
+        foot.append(&uri_button(
+            &tr("Open in browser"),
+            loudnesswar::search_url(&a, &al),
+        ));
+        content.append(&foot);
+
+        let (s, a2, al2, body) = (c.services.clone(), a.clone(), al.clone(), body.clone());
+        relm4::spawn_local(async move {
+            let rows = relm4::spawn(async move { s.loudness.search(&a2, &al2).await })
+                .await
+                .unwrap_or_default();
+            clear(&body);
+            if rows.is_empty() {
+                body.append(&label(
+                    &tr("No data found in Loudness War DB for this album"),
+                    &["dim-label"],
+                ));
+                return;
+            }
+            let grid = gtk::Grid::builder()
+                .column_spacing(12)
+                .row_spacing(4)
+                .build();
+            for (i, h) in ["Edition", "Year", "DR", "Min", "Max", "Codec", "Source"]
+                .iter()
+                .enumerate()
+            {
+                grid.attach(
+                    &label(&tr(h), &["dim-label", "caption-heading"]),
+                    i as i32,
+                    0,
+                    1,
+                    1,
+                );
+            }
+            for (r, e) in rows.iter().enumerate() {
+                let y = r as i32 + 1;
+                let ed = if e.id.is_empty() {
+                    ellipsized(&e.album, &[]).upcast::<gtk::Widget>()
+                } else {
+                    let b = uri_button(&e.album, loudnesswar::album_url(&e.id));
+                    b.upcast()
+                };
+                let cls = if e.dr == my_dr {
+                    "lw-same"
+                } else if e.dr > my_dr {
+                    "lw-better"
+                } else {
+                    "lw-worse"
+                };
+                ed.add_css_class(cls);
+                grid.attach(&ed, 0, y, 1, 1);
+                grid.attach(&label(&e.year, &["caption"]), 1, y, 1, 1);
+                grid.attach(&dr_badge(e.dr), 2, y, 1, 1);
+                grid.attach(
+                    &label(&e.dr_min.to_string(), &["caption", "numeric"]),
+                    3,
+                    y,
+                    1,
+                    1,
+                );
+                grid.attach(
+                    &label(&e.dr_max.to_string(), &["caption", "numeric"]),
+                    4,
+                    y,
+                    1,
+                    1,
+                );
+                grid.attach(&label(&e.codec, &["caption"]), 5, y, 1, 1);
+                grid.attach(&label(&e.source, &["caption"]), 6, y, 1, 1);
+            }
+            body.append(
+                &gtk::ScrolledWindow::builder()
+                    .child(&grid)
+                    .max_content_height(300)
+                    .propagate_natural_height(true)
+                    .hscrollbar_policy(gtk::PolicyType::Never)
+                    .build(),
+            );
+        });
+    });
+    gtk::MenuButton::builder()
+        .child(&dr_badge(my_dr))
+        .popover(&pop)
+        .valign(gtk::Align::Center)
+        .tooltip_text(tr("Compare DR with other editions on Loudness War DB"))
+        .css_classes(["flat", "dr-button"])
+        .build()
+}

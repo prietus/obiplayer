@@ -6,8 +6,12 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Instant;
 
+use std::sync::Arc;
+
 use obiplayer_core::catalog::Library;
 use obiplayer_core::library::Album;
+use obiplayer_core::meta::Services;
+use obiplayer_core::meta::release::{self, AlbumQuery, ReleaseInfo};
 
 use crate::app::AppMsg;
 use crate::covers::CoverLoader;
@@ -20,6 +24,7 @@ pub enum Route {
     Artist(String),
     Label(String),
     Composer(String),
+    Producer(String),
     Search(String),
 }
 
@@ -32,10 +37,11 @@ pub enum AlbumFilter {
 }
 
 impl AlbumFilter {
-    pub fn matches(&self, a: &Album) -> bool {
+    /// `extra`: enriched genres for the album.
+    pub fn matches(&self, a: &Album, extra: &[String]) -> bool {
         use obiplayer_core::text::fold;
         match self {
-            AlbumFilter::Genre(g) => a.genres.iter().any(|x| fold(x) == fold(g)),
+            AlbumFilter::Genre(g) => a.genres.iter().chain(extra).any(|x| fold(x) == fold(g)),
             AlbumFilter::Country(c) => {
                 a.country
                     .as_deref()
@@ -143,6 +149,11 @@ pub struct Ctx {
     pub clock: Cell<Clock>,
     /// Mono 44.1 kHz samples of the current track, for the visualizers.
     pub samples: RefCell<crate::viz::Samples>,
+    pub services: Arc<Services>,
+    /// Online release data per album folder (looked up once per session).
+    pub releases: RefCell<HashMap<String, Rc<ReleaseInfo>>>,
+    /// Genres added by enrichment, per album folder.
+    pub extra_genres: RefCell<HashMap<String, Vec<String>>>,
     tx: relm4::Sender<AppMsg>,
 }
 
@@ -150,6 +161,7 @@ impl Ctx {
     pub fn new(
         covers: Rc<CoverLoader>,
         music_dir: Option<PathBuf>,
+        services: Arc<Services>,
         tx: relm4::Sender<AppMsg>,
     ) -> Rc<Ctx> {
         Rc::new(Ctx {
@@ -162,8 +174,49 @@ impl Ctx {
             dr: RefCell::default(),
             clock: Cell::default(),
             samples: RefCell::default(),
+            services,
+            releases: RefCell::default(),
+            extra_genres: RefCell::default(),
             tx,
         })
+    }
+
+    /// Album genres including enriched ones.
+    pub fn genres(&self, album: &Album) -> Vec<String> {
+        let mut g = album.genres.clone();
+        if let Some(extra) = self.extra_genres.borrow().get(&album.folder) {
+            g.extend(extra.iter().cloned());
+        }
+        g
+    }
+
+    /// Online release data for an album (cached for the session). Runs the
+    /// network cascade on the Tokio runtime; await from the GTK main loop.
+    pub async fn release_info(&self, album: &Album) -> Rc<ReleaseInfo> {
+        if let Some(r) = self.releases.borrow().get(&album.folder) {
+            return r.clone();
+        }
+        let q = AlbumQuery {
+            folder: album.folder.clone(),
+            title: album.title.clone(),
+            artist: album.artist.clone(),
+            format: album.format(),
+            label: album.label.clone().unwrap_or_default(),
+            catalog: album.catalog_number.clone().unwrap_or_default(),
+            country: album.country.clone().unwrap_or_default(),
+            barcode: String::new(),
+            musicbrainz_id: album.musicbrainz_album_id.clone(),
+            first_track_path: album.first_file().and_then(|f| self.local_path(f)),
+        };
+        let s = self.services.clone();
+        let info = relm4::spawn(async move { release::lookup(&s, &q).await })
+            .await
+            .unwrap_or_default();
+        let info = Rc::new(info);
+        self.releases
+            .borrow_mut()
+            .insert(album.folder.clone(), info.clone());
+        info
     }
 
     pub fn act(&self, a: Action) {

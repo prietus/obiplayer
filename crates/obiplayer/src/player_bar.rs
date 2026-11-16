@@ -38,6 +38,8 @@ pub enum BarInput {
     Signal(Option<Box<SignalPath>>, bool),
     QueueShown(bool),
     VizShown(bool),
+    LyricsShown(bool),
+    Tasks(crate::tasks_ui::TasksState),
     /// Re-read shared state (e.g. a DR value arrived).
     Refresh,
     Tick,
@@ -48,6 +50,7 @@ pub enum BarOutput {
     Transport(Transport),
     ShowQueue(bool),
     ShowViz(bool),
+    ShowLyrics(bool),
     OpenCurrentAlbum,
 }
 
@@ -58,6 +61,7 @@ pub struct PlayerBar {
     album_folder: Option<String>,
     queue_shown: bool,
     viz_shown: bool,
+    lyrics_shown: bool,
 }
 
 pub struct BarWidgets {
@@ -79,7 +83,10 @@ pub struct BarWidgets {
     queue_handler: glib::SignalHandlerId,
     viz: gtk::ToggleButton,
     viz_handler: glib::SignalHandlerId,
+    lyrics: gtk::ToggleButton,
+    lyrics_handler: glib::SignalHandlerId,
     signal: SignalIndicator,
+    tasks: std::rc::Rc<crate::tasks_ui::TasksIndicator>,
     cover_folder: Rc<std::cell::RefCell<Option<String>>>,
 }
 
@@ -283,6 +290,13 @@ impl Component for PlayerBar {
                 let _ = s.output(BarOutput::ShowViz(b.is_active()));
             })
         };
+        let lyrics = toggle("format-justify-left-symbolic", "Lyrics");
+        let lyrics_handler = {
+            let s = sender.clone();
+            lyrics.connect_toggled(move |b| {
+                let _ = s.output(BarOutput::ShowLyrics(b.is_active()));
+            })
+        };
         let queue = toggle("view-list-symbolic", "Play queue");
         let queue_handler = {
             let s = sender.clone();
@@ -291,10 +305,13 @@ impl Component for PlayerBar {
             })
         };
         let toggles = ui::hbox(2);
+        let tasks = crate::tasks_ui::TasksIndicator::new();
+        toggles.append(&tasks.button);
         toggles.append(&viz);
+        toggles.append(&lyrics);
         toggles.append(&queue);
         // Balance the toggles so the transport stays centred.
-        let spacer = gtk::Box::builder().width_request(72).build();
+        let spacer = gtk::Box::builder().width_request(144).build();
         let row3 = ui::hbox(0);
         row3.append(&spacer);
         row3.append(&transport);
@@ -319,6 +336,7 @@ impl Component for PlayerBar {
             album_folder: None,
             queue_shown: false,
             viz_shown: false,
+            lyrics_shown: false,
         };
         let widgets = BarWidgets {
             cover,
@@ -339,7 +357,10 @@ impl Component for PlayerBar {
             queue_handler,
             viz,
             viz_handler,
+            lyrics,
+            lyrics_handler,
             signal,
+            tasks,
             cover_folder: Rc::default(),
         };
         ComponentParts { model, widgets }
@@ -361,8 +382,13 @@ impl Component for PlayerBar {
             }
             BarInput::QueueShown(v) => self.queue_shown = v,
             BarInput::VizShown(v) => self.viz_shown = v,
+            BarInput::LyricsShown(v) => self.lyrics_shown = v,
             // Handled in update_with_view-like fashion below.
-            BarInput::Peaks(_) | BarInput::Signal(..) | BarInput::Refresh | BarInput::Tick => {}
+            BarInput::Peaks(_)
+            | BarInput::Signal(..)
+            | BarInput::Tasks(_)
+            | BarInput::Refresh
+            | BarInput::Tick => {}
         }
     }
 
@@ -378,6 +404,7 @@ impl Component for PlayerBar {
             BarInput::Signal(path, connected) => {
                 w.signal.update(path.as_deref(), &self.status, *connected)
             }
+            BarInput::Tasks(t) => w.tasks.update(*t),
             _ => {}
         }
         self.update(msg, sender.clone(), root);
@@ -465,6 +492,9 @@ impl Component for PlayerBar {
         w.queue.block_signal(&w.queue_handler);
         w.queue.set_active(self.queue_shown);
         w.queue.unblock_signal(&w.queue_handler);
+        w.lyrics.block_signal(&w.lyrics_handler);
+        w.lyrics.set_active(self.lyrics_shown);
+        w.lyrics.unblock_signal(&w.lyrics_handler);
         w.viz.block_signal(&w.viz_handler);
         w.viz.set_active(self.viz_shown);
         w.viz.unblock_signal(&w.viz_handler);

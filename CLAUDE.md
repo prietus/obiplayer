@@ -10,11 +10,11 @@ Port a Linux (Rust + GTK4/libadwaita) de DrPlayer (`~/drplayer`, SwiftUI + MPD),
 - `crates/obiplayer` — app GTK con Relm4 (usar `relm4::gtk`/`relm4::adw`, no dependencias directas). Las órdenes MPD van como `sender.oneshot_command` (runtime tokio de Relm4); eventos del servidor vía `mpd::watch` → `async_channel` → `AppMsg::Mpd`. Listas grandes con `TypedGridView`/`TypedListView` (virtualizadas; la cola real tiene >5000 pistas).
 
 ## Configuración
-`~/.config/obiplayer/config.toml` (se crea con valores por defecto): `[mpd] host/port/password`, `[library] music_dir` (ruta local de la biblioteca; si falta, las portadas se piden a MPD). `MPD_HOST`/`MPD_PORT` tienen prioridad.
+`~/.config/obiplayer/config.toml` (se crea con valores por defecto): `[mpd] host/port/password`, `[library] music_dir` (ruta local de la biblioteca; si falta, las portadas se piden a MPD), `[apis] lastfm_api_key/discogs_key/discogs_secret` (el fichero se guarda con permisos 600; nunca imprimir ni registrar las claves). `MPD_HOST`/`MPD_PORT` tienen prioridad.
 
 ## Pruebas
 - Servidor MPD real del usuario: `192.0.2.10:6600` (sonando en un DAC; usar solo órdenes de lectura salvo que pida otra cosa).
-- Probar con UNA instancia cada vez: GTK es de instancia única (una segunda se cede a la primera y sale), y lanzar muchas seguidas llegó a dejar colgado el MPD del servidor. Matar con `pkill -x obiplayer` (no `-f`: coincide con la propia orden ssh). `OBIPLAYER_ROUTE=album:<carpeta>|track:<fichero>|artist:<n>|label:<n>|composer:<n>|search:<q>|mode:<albums|artists|labels|tracks|composers>|nowplaying:<art|viz>|osc:` abre esa vista al cargar (para capturas).
+- Probar con UNA instancia cada vez: GTK es de instancia única (una segunda se cede a la primera y sale), y lanzar muchas seguidas llegó a dejar colgado el MPD del servidor. Matar con `pkill -x obiplayer` (no `-f`: coincide con la propia orden ssh). `OBIPLAYER_ROUTE=album:<carpeta>|track:<fichero>|artist:<n>|label:<n>|composer:<n>|search:<q>|mode:<albums|artists|labels|tracks|composers>|nowplaying:<art|viz|lyrics>|osc:` abre esa vista al cargar (para capturas).
 - No usar `screencapture` en el Mac (pide permiso de Grabación de pantalla y captura el escritorio del usuario): las capturas, en la VM.
 - VM Linux: `ssh user@192.0.2.20` (Arch ARM, red en modo bridge, Wayland/river, `grim` para capturas; biblioteca montada en `/mnt/music` con `sudo mount -t nfs -o vers=3,ro 192.0.2.10:/mnt/music /mnt/music`, `music_dir = "/mnt/music"`). Copiar fuentes con `git ls-files -co --exclude-standard | tar -czf - -T - | ssh … 'tar -xzf - -C obiplayer'` (no hay rsync).
 

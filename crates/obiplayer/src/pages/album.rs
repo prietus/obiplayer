@@ -11,10 +11,12 @@ use relm4::adw;
 use relm4::gtk::{self, prelude::*};
 
 use super::Page;
+use super::albuminfo;
 use crate::covers::load_file_texture;
 use crate::ctx::{Action, AlbumFilter, Ctx, Route};
 use crate::tr;
 use crate::ui::{self, InfoGrid};
+use obiplayer_core::meta::release::ReleaseInfo;
 
 pub struct AlbumPage {
     nav: adw::NavigationPage,
@@ -24,6 +26,27 @@ pub struct AlbumPage {
     album_index: u32,
     tracks: gtk::ListBox,
     dr_box: gtk::Box,
+}
+
+/// Credit names as links to the producer page.
+fn people_links(ctx: &Rc<Ctx>, names: &[String]) -> gtk::FlowBox {
+    let b = gtk::FlowBox::builder()
+        .selection_mode(gtk::SelectionMode::None)
+        .max_children_per_line(8)
+        .row_spacing(0)
+        .column_spacing(4)
+        .build();
+    for n in names {
+        let (c, n2) = (ctx.clone(), n.clone());
+        let l = ui::link(n, &[], move || {
+            c.act(Action::Open(Route::Producer(n2.clone())))
+        });
+        if let Some(lab) = l.child().and_downcast::<gtk::Label>() {
+            lab.set_ellipsize(gtk::pango::EllipsizeMode::None);
+        }
+        b.append(&l);
+    }
+    b
 }
 
 impl AlbumPage {
@@ -78,17 +101,50 @@ impl AlbumPage {
         actions.append(&more_menu(ctx, &album));
         left.append(&actions);
         let dr_box = ui::hbox(8);
-        left.append(&info_grid(ctx, &album, &dr_box).grid);
+        let grid_box = ui::vbox(8);
+        grid_box.append(&info_grid(ctx, &album, &dr_box, None).grid);
+        left.append(&grid_box);
+        if let Some(p) = albuminfo::read_pressing(ctx, &album) {
+            left.append(&albuminfo::pressing_badge(&p));
+        }
+
+        // Online information column (fills in asynchronously).
+        let info_col = ui::vbox(12);
+        info_col.set_hexpand(true);
+        info_col.set_width_request(260);
+        albuminfo::loading(&info_col);
+        {
+            let (c, a, col, gb, drb) = (
+                ctx.clone(),
+                album.clone(),
+                info_col.clone(),
+                grid_box.clone(),
+                dr_box.clone(),
+            );
+            relm4::spawn_local(async move {
+                let info = c.release_info(&a).await;
+                albuminfo::fill(&col, &a, &info);
+                // Rebuild the data grid with online fields (dr_box moves over).
+                if let Some(g) = gb.first_child() {
+                    if drb.parent().is_some() {
+                        drb.unparent();
+                    }
+                    gb.remove(&g);
+                }
+                gb.prepend(&info_grid(&c, &a, &drb, Some(&info)).grid);
+            });
+        }
 
         let header = ui::hbox(24);
         header.append(&left);
+        header.append(&info_col);
         header.append(&artwork(ctx, &album));
         body.append(&header);
 
         // -- Genres ----------------------------------------------------------------
-        if !album.genres.is_empty() {
-            let items = album
-                .genres
+        let genres = ctx.genres(&album);
+        if !genres.is_empty() {
+            let items = genres
                 .iter()
                 .map(|g| {
                     let (c, g2) = (ctx.clone(), g.clone());
@@ -181,7 +237,7 @@ impl Page for AlbumPage {
     }
 }
 
-fn info_grid(ctx: &Rc<Ctx>, a: &Album, dr_box: &gtk::Box) -> InfoGrid {
+fn info_grid(ctx: &Rc<Ctx>, a: &Album, dr_box: &gtk::Box, info: Option<&ReleaseInfo>) -> InfoGrid {
     let mut g = InfoGrid::new();
     g.text("Duration", &a.formatted_duration());
     g.text("Tracks", &a.tracks.len().to_string());
@@ -196,7 +252,11 @@ fn info_grid(ctx: &Rc<Ctx>, a: &Album, dr_box: &gtk::Box) -> InfoGrid {
             }),
         );
     }
-    if let Some(l) = a.label.clone().filter(|l| !l.is_empty()) {
+    let label = info
+        .and_then(|i| i.label())
+        .or_else(|| a.label.clone())
+        .filter(|l| !l.is_empty());
+    if let Some(l) = label {
         let c = ctx.clone();
         let l2 = l.clone();
         g.widget(
@@ -206,13 +266,20 @@ fn info_grid(ctx: &Rc<Ctx>, a: &Album, dr_box: &gtk::Box) -> InfoGrid {
             }),
         );
     }
-    if let Some(cat) = &a.catalog_number {
-        let v = ui::label(cat, &["monospace"]);
+    if let Some(cat) = info
+        .and_then(|i| i.catalog())
+        .or_else(|| a.catalog_number.clone())
+    {
+        let v = ui::label(&cat, &["monospace"]);
         v.set_selectable(true);
         v.set_focusable(false);
         g.widget("Catalog", &v);
     }
-    if let Some(cc) = a.country.clone().filter(|c| !c.is_empty()) {
+    if let Some(cc) = info
+        .and_then(|i| i.country())
+        .or_else(|| a.country.clone())
+        .filter(|c| !c.is_empty())
+    {
         let c = ctx.clone();
         let cc2 = cc.clone();
         g.widget(
@@ -229,15 +296,56 @@ fn info_grid(ctx: &Rc<Ctx>, a: &Album, dr_box: &gtk::Box) -> InfoGrid {
     {
         g.text("Original", od);
     }
+    // Credits: MusicBrainz (only for this exact edition), else file tags.
+    let mb = info.and_then(|i| i.mb.as_ref().filter(|_| i.mb_matches_edition));
     let first = a.tracks.first();
-    for (key, tag) in [
-        ("Producer", "producer"),
-        ("Engineer", "engineer"),
-        ("Mixer", "mixer"),
+    let tag = |t: &str, fallback: Option<&str>| {
+        first
+            .and_then(|s| s.tag(t))
+            .map(str::to_owned)
+            .or_else(|| fallback.filter(|f| !f.is_empty()).map(str::to_owned))
+    };
+    let tags = info.map(|i| &i.tags);
+    for (key, names, tag_name, from_file) in [
+        (
+            "Producer",
+            mb.map(|m| &m.producers),
+            "producer",
+            tags.map(|t| t.producer.as_str()),
+        ),
+        (
+            "Engineer",
+            mb.map(|m| &m.engineers),
+            "engineer",
+            tags.map(|t| t.engineer.as_str()),
+        ),
+        ("Mastering", mb.map(|m| &m.mastering_engineers), "", None),
     ] {
-        if let Some(v) = first.and_then(|t| t.tag(tag)) {
-            g.text(key, v);
+        match names.filter(|n| !n.is_empty()) {
+            Some(n) => g.widget(key, &people_links(ctx, n)),
+            None => {
+                if let Some(v) = (!tag_name.is_empty())
+                    .then(|| tag(tag_name, from_file))
+                    .flatten()
+                {
+                    g.text(key, &v);
+                }
+            }
         }
+    }
+    let dg_mastering = info
+        .and_then(|i| i.dg.as_ref())
+        .map(|d| d.mastering_engineer.clone())
+        .filter(|m| !m.is_empty());
+    if mb.is_none_or(|m| m.mastering_engineers.is_empty())
+        && let Some(m) = dg_mastering
+    {
+        g.text("Mastering", &m);
+    }
+    if mb.is_none_or(|m| m.engineers.is_empty())
+        && let Some(v) = tag("mixer", tags.map(|t| t.mixer.as_str()))
+    {
+        g.text("Mixer", &v);
     }
     g
 }
@@ -465,8 +573,9 @@ pub fn track_row(ctx: &Rc<Ctx>, r: TrackRef, album_artist: &str) -> gtk::Box {
         "Add to queue",
         move || c.act(Action::EnqueueFile(f.clone())),
     ));
+    let album_title = lib.album(r.album).title.clone();
     match ctx.dr(&song.file) {
-        Some(d) => row.append(&ui::dr_badge(d)),
+        Some(d) => row.append(&ui::dr_compare_button(ctx, album_artist, &album_title, d)),
         None => row.append(
             &gtk::Label::builder()
                 .width_chars(4)

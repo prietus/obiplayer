@@ -14,6 +14,7 @@ use std::time::Duration;
 
 use obiplayer_core::covers::find_cover;
 use obiplayer_core::library::Album;
+use obiplayer_core::meta::{Services, images};
 use obiplayer_core::mpd::Client;
 use obiplayer_core::{paths, text};
 use relm4::gtk::{self, gdk, gdk_pixbuf, gio, glib, prelude::TextureExt};
@@ -26,6 +27,7 @@ type Callback = Box<dyn FnOnce(Option<&gdk::Texture>)>;
 
 pub struct CoverLoader {
     client: Client,
+    services: Arc<Services>,
     music_dir: Option<PathBuf>,
     cache: RefCell<HashMap<String, Option<gdk::Texture>>>,
     pending: RefCell<HashMap<String, Vec<Callback>>>,
@@ -33,9 +35,14 @@ pub struct CoverLoader {
 }
 
 impl CoverLoader {
-    pub fn new(client: Client, music_dir: Option<PathBuf>) -> Rc<CoverLoader> {
+    pub fn new(
+        client: Client,
+        services: Arc<Services>,
+        music_dir: Option<PathBuf>,
+    ) -> Rc<CoverLoader> {
         Rc::new(CoverLoader {
             client,
+            services,
             music_dir,
             cache: RefCell::default(),
             pending: RefCell::default(),
@@ -79,6 +86,12 @@ impl CoverLoader {
         let client = self.client.clone();
         let local_dir = self.music_dir.as_ref().map(|d| d.join(&album.folder));
         let first_file = album.first_file().map(str::to_owned);
+        let online = OnlineQuery {
+            services: self.services.clone(),
+            artist: album.artist.clone(),
+            title: album.title.clone(),
+            mbid: album.musicbrainz_album_id.clone(),
+        };
         let limit = self.limit.clone();
         let this = Rc::clone(self);
         let disk = disk_paths(&key);
@@ -89,7 +102,7 @@ impl CoverLoader {
                 DiskHit::Miss => {
                     let bytes = relm4::spawn(async move {
                         let _permit = limit.acquire_owned().await.ok()?;
-                        fetch_bytes(client, local_dir, first_file).await
+                        fetch_bytes(client, local_dir, first_file, online).await
                     })
                     .await
                     .ok()
@@ -169,10 +182,19 @@ fn store_disk((png, none): (PathBuf, PathBuf), texture: Option<gdk::Texture>) {
     });
 }
 
+/// Last resort: Discogs / Cover Art Archive.
+struct OnlineQuery {
+    services: Arc<Services>,
+    artist: String,
+    title: String,
+    mbid: Option<String>,
+}
+
 async fn fetch_bytes(
     client: Client,
     local_dir: Option<PathBuf>,
     first_file: Option<String>,
+    online: OnlineQuery,
 ) -> Option<Vec<u8>> {
     if let Some(dir) = local_dir {
         let found = tokio::task::spawn_blocking(move || {
@@ -185,14 +207,23 @@ async fn fetch_bytes(
             return found;
         }
     }
-    let file = first_file?;
-    match client.cover_art(&file).await {
-        Ok(b) => b,
-        Err(e) => {
-            tracing::debug!(%file, error = %e, "cover art from MPD failed");
-            None
+    if let Some(file) = first_file {
+        match client.cover_art(&file).await {
+            Ok(Some(b)) => return Some(b),
+            Ok(None) => {}
+            Err(e) => tracing::debug!(%file, error = %e, "cover art from MPD failed"),
         }
     }
+    if online.artist.is_empty() {
+        return None;
+    }
+    images::online_cover(
+        &online.services,
+        &online.artist,
+        &online.title,
+        online.mbid.as_deref(),
+    )
+    .await
 }
 
 /// Decode and scale to fit `size`×`size`, keeping the aspect ratio.

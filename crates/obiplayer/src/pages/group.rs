@@ -57,13 +57,17 @@ impl GroupPage {
             Kind::Composer => "music-note-symbolic",
         };
         let header = ui::hbox(18);
-        header.append(
-            &gtk::Image::builder()
-                .icon_name(icon)
-                .pixel_size(64)
-                .css_classes(["dim-label", "group-avatar"])
-                .build(),
-        );
+        if kind == Kind::Label {
+            header.append(
+                &gtk::Image::builder()
+                    .icon_name(icon)
+                    .pixel_size(64)
+                    .css_classes(["dim-label", "group-avatar"])
+                    .build(),
+            );
+        } else {
+            header.append(&ui::avatar(ctx, &g.name, 140));
+        }
         let title = ui::vbox(4);
         title.set_valign(gtk::Align::Center);
         let name = ui::label(&g.name, &["title-1"]);
@@ -81,6 +85,9 @@ impl GroupPage {
         ));
         header.append(&title);
         body.append(&header);
+        let online = ui::vbox(10);
+        body.append(&online);
+        fill_online(ctx, kind, &g, &online, &title);
 
         // -- In your library ----------------------------------------------------------
         let albums: Vec<_> = g.albums.iter().map(|&i| lib.album(i).clone()).collect();
@@ -263,4 +270,208 @@ fn compositions(ctx: &Rc<Ctx>, g: &Group) -> gtk::ListBox {
         }
     });
     list
+}
+
+fn fmt_count(n: u64) -> String {
+    match n {
+        1_000_000.. => format!("{:.1}M", n as f64 / 1e6),
+        1_000.. => format!("{:.1}K", n as f64 / 1e3),
+        _ => n.to_string(),
+    }
+}
+
+/// Online sections: MusicBrainz facts, Last.fm stats/tags/similar, Wikipedia
+/// biography, band members (artists); Wikipedia only for labels.
+fn fill_online(ctx: &Rc<Ctx>, kind: Kind, g: &Group, out: &gtk::Box, title: &gtk::Box) {
+    let s = ctx.services.clone();
+    let name = g.name.clone();
+    let (c, out, title) = (ctx.clone(), out.clone(), title.clone());
+    let library_genres = g.genres.clone();
+    let spinner = gtk::Spinner::builder()
+        .spinning(true)
+        .halign(gtk::Align::Start)
+        .build();
+    out.append(&spinner);
+    relm4::spawn_local(async move {
+        if kind == Kind::Label {
+            let n = name.clone();
+            let wiki = relm4::spawn(async move {
+                match s.wiki.search(&format!("{n} record label"), "en").await {
+                    Some(w) => Some(w),
+                    None => s.wiki.search(&n, "en").await,
+                }
+            })
+            .await
+            .ok()
+            .flatten();
+            out.remove(&spinner);
+            if let Some(w) = wiki {
+                let t = ui::label(&w.extract, &[]);
+                t.set_lines(6);
+                t.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                t.set_width_chars(30);
+                out.append(&t);
+                out.append(&ui::uri_button(
+                    &tr("Read more on Wikipedia"),
+                    w.page_url.clone(),
+                ));
+            }
+            return;
+        }
+
+        let n = name.clone();
+        let (mb, lfm, wiki) = relm4::spawn(async move {
+            let q = obiplayer_core::meta::wikipedia::artist_search_queries(&n)
+                .into_iter()
+                .next()
+                .unwrap_or(n.clone());
+            let mb = match s.mb.search_artist(&q).await {
+                Some(id) => s.mb.fetch_artist(&id).await,
+                None => None,
+            };
+            let lfm = s.lastfm.artist(&q).await;
+            let mut wiki = None;
+            if let Some(slug) = mb.as_ref().and_then(|a| a.wikipedia_slug.clone()) {
+                wiki = s.wiki.fetch_summary(&slug).await;
+            }
+            if wiki.is_none() {
+                wiki = s.wiki.search_artist(&n).await;
+            }
+            (mb, lfm, wiki)
+        })
+        .await
+        .unwrap_or_default();
+        out.remove(&spinner);
+
+        // Facts under the name.
+        let facts = ui::hbox(12);
+        if let Some(a) = &mb {
+            if !a.kind.is_empty() {
+                facts.append(&ui::label(&a.kind, &["dim-label", "caption"]));
+            }
+            if !a.area.is_empty() {
+                facts.append(&ui::label(&a.area, &["dim-label", "caption"]));
+            }
+            let period = match (a.begin.as_str(), a.end.as_str()) {
+                ("", _) => String::new(),
+                (b, "") => format!("{} {b}", tr("since")),
+                (b, e) => format!("{b} – {e}"),
+            };
+            if !period.is_empty() {
+                facts.append(&ui::label(&period, &["dim-label", "caption"]));
+            }
+        }
+        if let Some(l) = &lfm {
+            if let Ok(n) = l.listeners.parse::<u64>() {
+                facts.append(&ui::label(
+                    &format!("{} {}", fmt_count(n), tr("listeners")),
+                    &["dim-label", "caption"],
+                ));
+            }
+            if let Ok(n) = l.playcount.parse::<u64>() {
+                facts.append(&ui::label(
+                    &format!("{} {}", fmt_count(n), tr("plays")),
+                    &["dim-label", "caption"],
+                ));
+            }
+        }
+        title.append(&facts);
+
+        // Last.fm tags (library genres are already listed below).
+        let _ = &library_genres;
+        let tags: Vec<String> = lfm
+            .as_ref()
+            .map(|l| l.tags.iter().take(6).cloned().collect())
+            .unwrap_or_default();
+        if !tags.is_empty() {
+            let items = tags
+                .iter()
+                .map(|t| {
+                    let (c2, t2) = (c.clone(), t.clone());
+                    (
+                        t.to_uppercase(),
+                        Box::new(move || c2.act(Action::Filter(AlbumFilter::Genre(t2.clone()))))
+                            as Box<dyn Fn()>,
+                    )
+                })
+                .collect();
+            out.append(&ui::chip_box(items));
+        }
+
+        let links = ui::hbox(4);
+        if let Some(w) = &wiki {
+            links.append(&ui::uri_button("Wikipedia", w.page_url.clone()));
+        }
+        if let Some(l) = lfm.as_ref().filter(|l| !l.url.is_empty()) {
+            links.append(&ui::uri_button("Last.fm", l.url.clone()));
+        }
+        if let Some(a) = &mb {
+            links.append(&ui::uri_button(
+                "MusicBrainz",
+                format!("https://musicbrainz.org/artist/{}", a.id),
+            ));
+        }
+        out.append(&links);
+
+        // Biography
+        let (bio, src) = match (&wiki, &lfm) {
+            (Some(w), _) if !w.extract.is_empty() => (w.extract.clone(), "Wikipedia"),
+            (_, Some(l)) if !l.summary.is_empty() => (l.summary.clone(), "Last.fm"),
+            _ => (String::new(), ""),
+        };
+        if !bio.is_empty() {
+            out.append(&ui::heading(&tr("Biography")));
+            let t = ui::label(&bio, &[]);
+            t.set_width_chars(30);
+            out.append(&t);
+            out.append(&ui::label(
+                &format!("{} {src}", tr("Source:")),
+                &["dim-label", "caption"],
+            ));
+        }
+
+        if kind == Kind::Artist
+            && let Some(a) = mb.as_ref().filter(|a| !a.members.is_empty())
+        {
+            out.append(&ui::heading(&tr("Members")));
+            let mut grid = InfoGrid::new();
+            for m in &a.members {
+                let mut v = m.role.clone();
+                if !m.period.is_empty() {
+                    if !v.is_empty() {
+                        v.push_str(" · ");
+                    }
+                    v.push_str(&m.period);
+                }
+                grid.text(&m.name, if v.is_empty() { "—" } else { &v });
+            }
+            out.append(&grid.grid);
+        }
+
+        if let Some(l) = lfm.as_ref().filter(|l| !l.similar.is_empty()) {
+            out.append(&ui::heading(&tr("Similar artists")));
+            let lib = c.lib();
+            let known: Vec<String> = lib.artists().into_iter().map(|g| g.name).collect();
+            let items = l
+                .similar
+                .iter()
+                .map(|n| {
+                    let in_lib = known
+                        .iter()
+                        .find(|k| text::fold(k) == text::fold(n))
+                        .cloned();
+                    let c2 = c.clone();
+                    (
+                        n.clone(),
+                        Box::new(move || {
+                            if let Some(k) = &in_lib {
+                                c2.act(Action::Open(Route::Artist(k.clone())));
+                            }
+                        }) as Box<dyn Fn()>,
+                    )
+                })
+                .collect();
+            out.append(&ui::chip_box(items));
+        }
+    });
 }

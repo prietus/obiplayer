@@ -1,8 +1,10 @@
 //! Pages pushed on the navigation stack.
 
 pub mod album;
+pub mod albuminfo;
 pub mod browse;
 pub mod group;
+pub mod producers;
 pub mod search;
 pub mod track;
 pub mod tracks;
@@ -28,6 +30,7 @@ pub fn tag(route: &Route) -> String {
         Route::Artist(n) => format!("artist:{n}"),
         Route::Label(n) => format!("label:{n}"),
         Route::Composer(n) => format!("composer:{n}"),
+        Route::Producer(n) => format!("producer:{n}"),
         Route::Search(_) => "search".into(),
     }
 }

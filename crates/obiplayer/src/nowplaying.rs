@@ -41,6 +41,9 @@ pub struct NowPlaying {
     index: Rc<Cell<usize>>,
     folder: RefCell<Option<String>>,
     viz_toggle: RefCell<Option<gtk::ToggleButton>>,
+    lyrics_toggle: RefCell<Option<gtk::ToggleButton>>,
+    lyrics: Rc<crate::lyrics_ui::LyricsView>,
+    song: RefCell<Option<Song>>,
 }
 
 fn round_button(icon: &str, tip: &str, f: impl Fn() + 'static) -> gtk::Button {
@@ -77,6 +80,12 @@ impl NowPlaying {
             .tooltip_text(tr("Visualizer"))
             .group(&artwork_btn)
             .build();
+        let lyrics_btn = gtk::ToggleButton::builder()
+            .icon_name("format-justify-left-symbolic")
+            .tooltip_text(tr("Lyrics"))
+            .group(&artwork_btn)
+            .build();
+        modes.append(&lyrics_btn);
         modes.append(&artwork_btn);
         modes.append(&viz_btn);
         let audio = ui::label("", &["monospace", "caption", "np-dim"]);
@@ -138,6 +147,8 @@ impl NowPlaying {
             .build();
         stack.add_named(&art_box, Some("artwork"));
         stack.add_named(&viz_box, Some("visualizer"));
+        let lyrics = crate::lyrics_ui::LyricsView::new(ctx, true);
+        stack.add_named(&lyrics.root, Some("lyrics"));
 
         // -- Bottom: waveform, text, transport ----------------------------------------
         let c = ctx.clone();
@@ -236,7 +247,21 @@ impl NowPlaying {
             index,
             folder: RefCell::default(),
             viz_toggle: RefCell::new(Some(viz_btn.clone())),
+            lyrics_toggle: RefCell::new(Some(lyrics_btn.clone())),
+            lyrics,
+            song: RefCell::default(),
         });
+        {
+            let n = np.clone();
+            lyrics_btn.connect_toggled(move |b| {
+                if b.is_active() {
+                    n.stack.set_visible_child_name("lyrics");
+                    n.background.add_css_class("np-blur");
+                    let song = n.song.borrow().clone();
+                    n.lyrics.load(&n.ctx, song.as_ref());
+                }
+            });
+        }
 
         {
             let n = np.clone();
@@ -331,6 +356,13 @@ impl NowPlaying {
         });
     }
 
+    /// Switch to the lyrics mode.
+    pub fn show_lyrics(self: &Rc<Self>) {
+        if let Some(b) = self.lyrics_toggle.borrow().as_ref() {
+            b.set_active(true);
+        }
+    }
+
     /// Switch to the visualizer mode.
     pub fn show_visualizer(&self) {
         self.stack.set_visible_child_name("visualizer");
@@ -340,7 +372,16 @@ impl NowPlaying {
         }
     }
 
-    pub fn update(&self, status: &Status, song: Option<&Song>, album: Option<&Arc<Album>>) {
+    pub fn update(
+        self: &Rc<Self>,
+        status: &Status,
+        song: Option<&Song>,
+        album: Option<&Arc<Album>>,
+    ) {
+        *self.song.borrow_mut() = song.cloned();
+        if self.stack.visible_child_name().as_deref() == Some("lyrics") {
+            self.lyrics.load(&self.ctx, song);
+        }
         match song {
             Some(s) => {
                 self.title.set_label(s.display_title());

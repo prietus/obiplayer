@@ -4,11 +4,13 @@ mod albums;
 mod app;
 mod covers;
 mod ctx;
+mod lyrics_ui;
 mod nowplaying;
 mod pages;
 mod player_bar;
 mod queue;
 mod signal_ui;
+mod tasks_ui;
 mod ui;
 mod viz;
 
@@ -81,6 +83,25 @@ levelbar.dr-bar.dr-red block.filled { background: #e01b24; }
 .np-dim { color: alpha(white, 0.6); }
 .np-play { min-width: 56px; min-height: 56px; }
 .np-art { border-radius: 12px; }
+.lyric-line { transition: all 300ms; }
+.lyric-past { opacity: 0.35; }
+.lyric-future { opacity: 0.65; }
+.lyric-current { opacity: 1; font-weight: bold; }
+.lyric-large { font-size: 1.4em; }
+.lyric-large.lyric-current { font-size: 1.9em; }
+.lyrics-synced { color: #33d17a; }
+.lyrics-unsynced { color: #ff7800; }
+.avatar-frame { border-radius: 999px; background: alpha(currentColor, 0.08); }
+.summary-card, .pressing-card { padding: 10px 12px; border-radius: 10px; background: alpha(currentColor, 0.05); }
+.pressing-card { background: alpha(#33d17a, 0.10); }
+.link-pill { padding: 2px 8px; min-height: 0; }
+.details-header { margin-top: 6px; letter-spacing: 1px; }
+.source-note { font-style: italic; }
+.lw-better { color: #33d17a; }
+.lw-worse { color: #e66100; }
+.lw-same { color: @accent_color; font-weight: bold; }
+.dr-button { padding: 0 2px; min-height: 0; }
+.task-active { color: #ff7800; }
 .group-avatar { padding: 18px; border-radius: 999px; background: alpha(currentColor, 0.08); }
 "#;
 

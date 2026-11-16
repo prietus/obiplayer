@@ -73,6 +73,12 @@ pub struct App {
     pages: Vec<Box<dyn Page>>,
     browse: Vec<Browse>,
     tracks: TracksView,
+    producers: Rc<crate::pages::producers::ProducersView>,
+    lyrics: Rc<crate::lyrics_ui::LyricsView>,
+    lyrics_shown: bool,
+    tasks: crate::tasks_ui::TasksState,
+    extra_genres: Rc<RefCell<HashMap<String, Vec<String>>>>,
+    enrich_started: bool,
 }
 
 #[derive(Debug)]
@@ -85,6 +91,9 @@ pub enum AppMsg {
     ClearQueue,
     ShowQueue(bool),
     ShowViz(bool),
+    ShowLyrics(bool),
+    /// Genre enrichment progress: (folder, new genres, done, total).
+    Genres(String, Vec<String>, usize, usize),
     ReloadLibrary,
     ShowCurrentAlbum,
     ClearFilter,
@@ -119,6 +128,7 @@ pub struct AppWidgets {
     queue_revealer: gtk::Revealer,
     queue_count: gtk::Label,
     osc_revealer: gtk::Revealer,
+    lyrics_revealer: gtk::Revealer,
 }
 
 fn err(e: mpd::Error) -> String {
@@ -247,6 +257,46 @@ impl App {
             .root()
             .and_downcast::<adw::ApplicationWindow>()
             .expect("window")
+    }
+
+    fn push_tasks(&self) {
+        let mut t = self.tasks;
+        t.dr_pending = self.dr_queue.len() + usize::from(self.dr_busy);
+        t.outputs = self.outputs.len();
+        self.bar.emit(BarInput::Tasks(t));
+    }
+
+    /// Enrich albums with fewer than 3 genres (once per session). Cached
+    /// albums are instant; each network lookup is followed by a 1 s pause.
+    fn start_genre_enrichment(&mut self, sender: &ComponentSender<Self>) {
+        if self.enrich_started {
+            return;
+        }
+        self.enrich_started = true;
+        let albums: Vec<Arc<Album>> = self
+            .ctx
+            .lib()
+            .albums
+            .iter()
+            .filter(|a| a.genres.len() < 3 && !a.artist.is_empty())
+            .cloned()
+            .collect();
+        let total = albums.len();
+        let s = self.ctx.services.clone();
+        let input = sender.input_sender().clone();
+        relm4::spawn(async move {
+            for (i, a) in albums.iter().enumerate() {
+                let new = match obiplayer_core::meta::genres::cached(a) {
+                    Some(c) => c,
+                    None => {
+                        let n = obiplayer_core::meta::genres::enrich(&s, a).await;
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        n
+                    }
+                };
+                input.emit(AppMsg::Genres(a.folder.clone(), new, i + 1, total));
+            }
+        });
     }
 
     fn refresh_signal(&self, sender: &ComponentSender<Self>) {
@@ -409,6 +459,9 @@ impl App {
                 GroupPage::new(&self.ctx, Kind::Composer, n).map(|p| Box::new(p) as _)
             }
             Route::Search(q) => Some(Box::new(SearchPage::new(&self.ctx, q))),
+            Route::Producer(n) => Some(Box::new(crate::pages::producers::ProducerPage::new(
+                &self.ctx, n,
+            ))),
         };
         match page {
             Some(p) => {
@@ -444,8 +497,10 @@ impl App {
             }
             "nowplaying" => {
                 self.act(Action::ShowNowPlaying(true), sender, &self.root());
-                if arg == "viz" {
-                    self.nowplaying.show_visualizer();
+                match arg.as_str() {
+                    "viz" => self.nowplaying.show_visualizer(),
+                    "lyrics" => self.nowplaying.show_lyrics(),
+                    _ => {}
                 }
                 return;
             }
@@ -705,10 +760,18 @@ impl Component for App {
         let cfg = config.connect_config();
         let client = Client::new(cfg.clone());
         // Separate connection so artwork transfers never delay transport commands.
-        let covers = CoverLoader::new(Client::new(cfg.clone()), config.library.music_dir.clone());
+        let services = obiplayer_core::meta::Services::new(
+            &obiplayer_core::meta::Keys::from_config(&config.apis),
+        );
+        let covers = CoverLoader::new(
+            Client::new(cfg.clone()),
+            services.clone(),
+            config.library.music_dir.clone(),
+        );
         let ctx = Ctx::new(
             covers.clone(),
             config.library.music_dir.clone(),
+            services,
             sender.input_sender().clone(),
         );
 
@@ -718,15 +781,25 @@ impl Component for App {
                 BarOutput::Transport(t) => AppMsg::Transport(t),
                 BarOutput::ShowQueue(v) => AppMsg::ShowQueue(v),
                 BarOutput::ShowViz(v) => AppMsg::ShowViz(v),
+                BarOutput::ShowLyrics(v) => AppMsg::ShowLyrics(v),
                 BarOutput::OpenCurrentAlbum => AppMsg::ShowCurrentAlbum,
             });
 
         // -- Albums grid (with optional filter) ------------------------------------------
         let filter: Rc<RefCell<Option<AlbumFilter>>> = Rc::default();
         let mut grid: TypedGridView<AlbumItem, gtk::NoSelection> = TypedGridView::new();
+        let extra_genres: Rc<RefCell<HashMap<String, Vec<String>>>> = Rc::default();
         {
-            let f = filter.clone();
-            grid.add_filter(move |item| f.borrow().as_ref().is_none_or(|f| f.matches(&item.album)));
+            let (f, extra) = (filter.clone(), extra_genres.clone());
+            grid.add_filter(move |item| {
+                f.borrow().as_ref().is_none_or(|f| {
+                    let e = extra.borrow();
+                    f.matches(
+                        &item.album,
+                        e.get(&item.album.folder).map(Vec::as_slice).unwrap_or(&[]),
+                    )
+                })
+            });
         }
         grid.view.set_single_click_activate(true);
         grid.view.set_min_columns(2);
@@ -836,6 +909,22 @@ impl Component for App {
             &tr("Composers"),
             "music-note-symbolic",
         );
+        let producers = crate::pages::producers::ProducersView::new(&ctx);
+        modes.add_titled_with_icon(
+            &producers.root,
+            Some("producers"),
+            &tr("Producers"),
+            "system-users-symbolic",
+        );
+        {
+            // Credits accumulate as albums are opened: rescan on entry.
+            let (p, c) = (producers.clone(), ctx.clone());
+            modes.connect_visible_child_name_notify(move |m| {
+                if m.visible_child_name().as_deref() == Some("producers") {
+                    p.reload(&c);
+                }
+            });
+        }
 
         // -- Root page header ----------------------------------------------------------------
         let switcher = adw::ViewSwitcher::builder()
@@ -893,8 +982,17 @@ impl Component for App {
         // -- Queue + window layout -------------------------------------------------------------
         let queue: TypedListView<QueueItem, gtk::NoSelection> = TypedListView::new();
         let (queue_revealer, queue_count) = queue_panel(&sender, &queue);
+        let lyrics = crate::lyrics_ui::LyricsView::new(&ctx, false);
+        lyrics.root.set_width_request(320);
+        lyrics.root.add_css_class("queue-panel");
+        let lyrics_revealer = gtk::Revealer::builder()
+            .transition_type(gtk::RevealerTransitionType::SlideLeft)
+            .hexpand(false)
+            .child(&lyrics.root)
+            .build();
         let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         body.append(&nav);
+        body.append(&lyrics_revealer);
         body.append(&queue_revealer);
         let toasts = adw::ToastOverlay::new();
         toasts.set_child(Some(&body));
@@ -983,6 +1081,12 @@ impl Component for App {
             pages: Vec::new(),
             browse,
             tracks,
+            producers,
+            lyrics,
+            lyrics_shown: false,
+            tasks: Default::default(),
+            extra_genres,
+            enrich_started: false,
             outputs: Vec::new(),
             replay_gain: "off".into(),
             dr_queue: VecDeque::new(),
@@ -1003,6 +1107,7 @@ impl Component for App {
             queue_revealer,
             queue_count,
             osc_revealer,
+            lyrics_revealer,
         };
         ComponentParts { model, widgets }
     }
@@ -1093,6 +1198,25 @@ impl Component for App {
                 self.run(&sender, move |c| async move { c.delete_pos(pos).await })
             }
             AppMsg::ClearQueue => self.run(&sender, |c| async move { c.clear().await }),
+            AppMsg::Genres(folder, new, done, total) => {
+                if !new.is_empty() {
+                    self.extra_genres
+                        .borrow_mut()
+                        .insert(folder.clone(), new.clone());
+                    self.ctx.extra_genres.borrow_mut().insert(folder, new);
+                }
+                self.tasks.genres_done = done;
+                self.tasks.genres_total = total;
+                self.tasks.genres_running = done < total;
+                self.push_tasks();
+            }
+            AppMsg::ShowLyrics(v) => {
+                self.lyrics_shown = v;
+                self.bar.emit(BarInput::LyricsShown(v));
+                if v {
+                    self.lyrics.load(&self.ctx, self.song.as_ref());
+                }
+            }
             AppMsg::ShowViz(v) => {
                 self.viz_shown = v;
                 self.bar.emit(BarInput::VizShown(v));
@@ -1148,6 +1272,9 @@ impl Component for App {
                         self.queue_dr(&sender, vec![f], true);
                     }
                     self.load_track_media(&sender);
+                    if self.lyrics_shown {
+                        self.lyrics.load(&self.ctx, self.song.as_ref());
+                    }
                 }
                 if self.np_shown {
                     let album = self
@@ -1200,6 +1327,8 @@ impl Component for App {
                     b.reload(&self.ctx);
                 }
                 self.tracks.reload(&self.ctx);
+                self.start_genre_enrichment(&sender);
+                self.producers.reload(&self.ctx);
                 {
                     let files: Vec<String> = lib
                         .albums
@@ -1258,6 +1387,7 @@ impl Component for App {
                 self.outputs = outs;
                 self.replay_gain = rg;
                 self.push_signal();
+                self.push_tasks();
             }
             Cmd::DrPrefill(map) => {
                 self.ctx.dr.borrow_mut().extend(map);
@@ -1267,6 +1397,7 @@ impl Component for App {
             }
             Cmd::DrDone(file, dr) => {
                 self.dr_busy = false;
+                self.push_tasks();
                 if let Some(d) = dr {
                     self.ctx.dr.borrow_mut().insert(file.clone(), d);
                     self.refresh_pages();
@@ -1350,6 +1481,7 @@ impl Component for App {
 
         w.queue_revealer.set_reveal_child(self.queue_shown);
         w.osc_revealer.set_reveal_child(self.viz_shown);
+        w.lyrics_revealer.set_reveal_child(self.lyrics_shown);
         w.queue_count
             .set_label(&format!("{} {}", self.queue.len(), tr("tracks")));
     }

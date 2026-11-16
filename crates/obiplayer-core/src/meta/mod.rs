@@ -15,6 +15,7 @@ pub mod lastfm;
 pub mod loudnesswar;
 pub mod lyrics;
 pub mod musicbrainz;
+pub mod producers;
 pub mod release;
 pub mod services;
 pub mod titles;
