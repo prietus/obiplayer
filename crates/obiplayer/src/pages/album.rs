@@ -240,6 +240,12 @@ impl Page for AlbumPage {
                 self.dr_box.append(&ui::dr_badge(d));
                 self.dr_box.append(&ui::dr_bar(d, 60));
             }
+            None if self.ctx.music_dir.is_some() && !self.ctx.music_dir_available() => {
+                self.dr_box.append(&ui::label(
+                    &tr("Music folder not mounted"),
+                    &["dim-label", "caption"],
+                ))
+            }
             None if self.ctx.music_dir.is_some() => {
                 // On demand: only the playing track is analysed automatically.
                 let b = gtk::Button::builder()

@@ -259,6 +259,14 @@ impl Ctx {
         self.ratings.borrow().get(file).copied().unwrap_or(0)
     }
 
+    /// The configured music folder exists and has something in it (an
+    /// unmounted network share is an empty directory).
+    pub fn music_dir_available(&self) -> bool {
+        self.music_dir
+            .as_ref()
+            .is_some_and(|d| std::fs::read_dir(d).is_ok_and(|mut it| it.next().is_some()))
+    }
+
     /// Local path of an album/track, when the music directory is known.
     pub fn local_path(&self, rel: &str) -> Option<PathBuf> {
         self.music_dir.as_ref().map(|d| d.join(rel))

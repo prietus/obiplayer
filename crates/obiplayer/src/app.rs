@@ -1646,6 +1646,21 @@ impl Component for App {
                 }
                 self.tracks.reload(&self.ctx);
                 self.start_genre_enrichment(&sender);
+                if let Some(d) = self
+                    .ctx
+                    .music_dir
+                    .as_ref()
+                    .filter(|_| !self.ctx.music_dir_available())
+                {
+                    let t = adw::Toast::new(&format!(
+                        "{} {} — {}",
+                        tr("Music folder not available:"),
+                        d.display(),
+                        tr("is it mounted? DR, waveforms, visualizers and local artwork need it.")
+                    ));
+                    t.set_timeout(0);
+                    self.toasts.add_toast(t);
+                }
                 self.producers.reload(&self.ctx);
                 self.home.reload(&self.ctx);
                 self.smart.reload();

@@ -475,6 +475,10 @@ msgid "internal"
 msgstr ""
 
 #: app.rs
+msgid "is it mounted? DR, waveforms, visualizers and local artwork need it."
+msgstr ""
+
+#: app.rs
 msgid "Is the music disk mounted on the server? Run an MPD update and reload."
 msgstr ""
 
@@ -640,6 +644,14 @@ msgstr ""
 
 #: settings.rs
 msgid "Music folder"
+msgstr ""
+
+#: app.rs
+msgid "Music folder not available:"
+msgstr ""
+
+#: album.rs
+msgid "Music folder not mounted"
 msgstr ""
 
 #: settings.rs

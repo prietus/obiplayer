@@ -1289,3 +1289,12 @@ msgstr "Idioma"
 
 msgid "Applies after restarting"
 msgstr "Se aplica al reiniciar"
+
+msgid "Music folder not available:"
+msgstr "Carpeta de música no disponible:"
+
+msgid "is it mounted? DR, waveforms, visualizers and local artwork need it."
+msgstr "¿está montada? La necesitan el DR, las ondas, los visualizadores y las carátulas locales."
+
+msgid "Music folder not mounted"
+msgstr "Carpeta de música sin montar"
