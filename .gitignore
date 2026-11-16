@@ -1,4 +1,18 @@
-target/
+# Build
+/target/
 packaging/arch/src/
 packaging/arch/pkg/
 packaging/arch/*.pkg.tar*
+packaging/flatpak/.flatpak-builder/
+packaging/flatpak/build/
+packaging/flatpak/cargo-sources.json
+
+# Editors / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Local configuration never belongs in the repo (it can hold API keys)
+config.toml
+CLAUDE.local.md
