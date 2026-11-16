@@ -154,9 +154,14 @@ impl AlbumPage {
             });
         }
 
+        // Data and online info share the width equally; the cover is fixed.
+        let columns = ui::hbox(24);
+        columns.set_homogeneous(true);
+        columns.set_hexpand(true);
+        columns.append(&left);
+        columns.append(&info_col);
         let header = ui::hbox(24);
-        header.append(&left);
-        header.append(&info_col);
+        header.append(&columns);
         header.append(&artwork(ctx, &album));
         body.append(&header);
 

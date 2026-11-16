@@ -303,7 +303,7 @@ pub fn stars(ctx: &Rc<Ctx>, file: &str) -> gtk::Box {
 /// A page with its own header bar and a scrolled, width-clamped body.
 pub fn page(title: &str, tag: &str, body: &impl IsA<gtk::Widget>) -> adw::NavigationPage {
     let clamp = adw::Clamp::builder()
-        .maximum_size(1200)
+        .maximum_size(1400)
         .tightening_threshold(900)
         .child(body)
         .build();
