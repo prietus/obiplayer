@@ -243,6 +243,12 @@ impl Client {
             .ok_or_else(|| Error::Protocol("addid returned no Id".into()))
     }
 
+    /// Append a file and start playing it right away.
+    pub async fn add_and_play(&self, uri: &str) -> Result<()> {
+        let id = self.add_id(uri).await?;
+        self.play_id(id).await
+    }
+
     pub async fn delete_pos(&self, pos: u32) -> Result<()> {
         self.simple(Command::new("delete").arg(pos)).await
     }

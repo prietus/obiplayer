@@ -1,0 +1,551 @@
+//! Album detail.
+
+use std::rc::Rc;
+use std::sync::Arc;
+
+use obiplayer_core::catalog::TrackRef;
+use obiplayer_core::covers::all_artwork;
+use obiplayer_core::library::Album;
+use obiplayer_core::quality::{self, Badge};
+use relm4::adw;
+use relm4::gtk::{self, prelude::*};
+
+use super::Page;
+use crate::covers::load_file_texture;
+use crate::ctx::{Action, AlbumFilter, Ctx, Route};
+use crate::tr;
+use crate::ui::{self, InfoGrid};
+
+pub struct AlbumPage {
+    nav: adw::NavigationPage,
+    route: Route,
+    ctx: Rc<Ctx>,
+    album: Arc<Album>,
+    album_index: u32,
+    tracks: gtk::ListBox,
+}
+
+impl AlbumPage {
+    pub fn new(ctx: &Rc<Ctx>, folder: &str) -> Option<AlbumPage> {
+        let lib = ctx.lib();
+        let album_index = lib.album_index(folder)?;
+        let album = lib.album(album_index).clone();
+        let body = ui::page_body();
+
+        // -- Header: text + actions | cover ---------------------------------------
+        let left = ui::vbox(6);
+        left.set_hexpand(true);
+        if let Some(date) = album.date.clone() {
+            let c = ctx.clone();
+            let d = date.clone();
+            left.append(&ui::link(&date, &["dim-label"], move || {
+                c.act(Action::Open(Route::Search(d.clone())))
+            }));
+        }
+        let title = ui::label(&album.title, &["title-1"]);
+        title.set_width_chars(16);
+        left.append(&title);
+        if !album.artist.is_empty() {
+            let c = ctx.clone();
+            let a = album.artist.clone();
+            left.append(&ui::link(&album.artist, &["title-3"], move || {
+                c.act(Action::Open(Route::Artist(a.clone())))
+            }));
+        }
+
+        let actions = ui::hbox(6);
+        actions.set_margin_top(6);
+        actions.set_margin_bottom(6);
+        let play = gtk::Button::builder()
+            .label(tr("Play"))
+            .css_classes(["pill", "suggested-action"])
+            .build();
+        {
+            let (c, f) = (ctx.clone(), album.folder.clone());
+            play.connect_clicked(move |_| c.act(Action::PlayAlbum(f.clone())));
+        }
+        let enqueue = gtk::Button::builder()
+            .label(tr("Add to queue"))
+            .css_classes(["pill"])
+            .build();
+        {
+            let (c, f) = (ctx.clone(), album.folder.clone());
+            enqueue.connect_clicked(move |_| c.act(Action::EnqueueAlbum(f.clone())));
+        }
+        actions.append(&play);
+        actions.append(&enqueue);
+        actions.append(&more_menu(ctx, &album));
+        left.append(&actions);
+        left.append(&info_grid(ctx, &album).grid);
+
+        let header = ui::hbox(24);
+        header.append(&left);
+        header.append(&artwork(ctx, &album));
+        body.append(&header);
+
+        // -- Genres ----------------------------------------------------------------
+        if !album.genres.is_empty() {
+            let items = album
+                .genres
+                .iter()
+                .map(|g| {
+                    let (c, g2) = (ctx.clone(), g.clone());
+                    (
+                        g.to_uppercase(),
+                        Box::new(move || c.act(Action::Filter(AlbumFilter::Genre(g2.clone()))))
+                            as Box<dyn Fn()>,
+                    )
+                })
+                .collect();
+            body.append(&ui::chip_box(items));
+        }
+
+        // -- Tracks ------------------------------------------------------------------
+        body.append(&ui::heading(&tr("Tracks")));
+        let tracks = gtk::ListBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .css_classes(["boxed-list"])
+            .build();
+        {
+            let c = ctx.clone();
+            let files: Vec<String> = album.tracks.iter().map(|t| t.file.clone()).collect();
+            tracks.connect_row_activated(move |_, row| {
+                if let Some(f) = files.get(row.index() as usize) {
+                    c.act(Action::Open(Route::Track(f.clone())));
+                }
+            });
+        }
+        body.append(&tracks);
+
+        // -- Other editions ----------------------------------------------------------
+        let editions = lib.other_editions(&album);
+        if !editions.is_empty() {
+            body.append(&ui::heading(&tr("Other editions")));
+            body.append(&editions_list(ctx, &editions));
+        }
+
+        let page = AlbumPage {
+            nav: ui::page(
+                &album.title,
+                &super::tag(&Route::Album(album.folder.clone())),
+                &body,
+            ),
+            route: Route::Album(album.folder.clone()),
+            ctx: ctx.clone(),
+            album,
+            album_index,
+            tracks,
+        };
+        page.refresh();
+        Some(page)
+    }
+}
+
+impl Page for AlbumPage {
+    fn nav(&self) -> &adw::NavigationPage {
+        &self.nav
+    }
+
+    fn route(&self) -> &Route {
+        &self.route
+    }
+
+    fn refresh(&self) {
+        self.tracks.remove_all();
+        for i in 0..self.album.tracks.len() {
+            let r = TrackRef {
+                album: self.album_index,
+                track: i as u32,
+            };
+            self.tracks
+                .append(&track_row(&self.ctx, r, &self.album.artist));
+        }
+    }
+}
+
+fn info_grid(ctx: &Rc<Ctx>, a: &Album) -> InfoGrid {
+    let mut g = InfoGrid::new();
+    g.text("Duration", &a.formatted_duration());
+    g.text("Tracks", &a.tracks.len().to_string());
+    let fmt = a.format();
+    if !fmt.is_empty() {
+        let (c, f) = (ctx.clone(), fmt.clone());
+        g.widget(
+            "Format",
+            &ui::link(&fmt, &["monospace"], move || {
+                c.act(Action::Filter(AlbumFilter::Format(f.clone())))
+            }),
+        );
+    }
+    if let Some(l) = a.label.clone().filter(|l| !l.is_empty()) {
+        let c = ctx.clone();
+        let l2 = l.clone();
+        g.widget(
+            "Label",
+            &ui::link(&l, &[], move || {
+                c.act(Action::Open(Route::Label(l2.clone())))
+            }),
+        );
+    }
+    if let Some(cat) = &a.catalog_number {
+        let v = ui::label(cat, &["monospace"]);
+        v.set_selectable(true);
+        g.widget("Catalog", &v);
+    }
+    if let Some(cc) = a.country.clone().filter(|c| !c.is_empty()) {
+        let c = ctx.clone();
+        let cc2 = cc.clone();
+        g.widget(
+            "Country",
+            &ui::link(&cc, &[], move || {
+                c.act(Action::Filter(AlbumFilter::Country(cc2.clone())))
+            }),
+        );
+    }
+    if let Some(od) = a
+        .original_date
+        .as_deref()
+        .filter(|d| Some(*d) != a.date.as_deref())
+    {
+        g.text("Original", od);
+    }
+    let first = a.tracks.first();
+    for (key, tag) in [
+        ("Producer", "producer"),
+        ("Engineer", "engineer"),
+        ("Mixer", "mixer"),
+    ] {
+        if let Some(v) = first.and_then(|t| t.tag(tag)) {
+            g.text(key, v);
+        }
+    }
+    g
+}
+
+fn more_menu(ctx: &Rc<Ctx>, a: &Album) -> gtk::MenuButton {
+    let pop = gtk::Popover::new();
+    let col = ui::vbox(0);
+    let item = |label: &str, action: Action| {
+        let b = gtk::Button::builder()
+            .label(tr(label))
+            .css_classes(["flat"])
+            .build();
+        if let Some(l) = b.child().and_downcast::<gtk::Label>() {
+            l.set_xalign(0.0);
+        }
+        let (c, p) = (ctx.clone(), pop.clone());
+        b.connect_clicked(move |_| {
+            p.popdown();
+            c.act(action.clone());
+        });
+        b
+    };
+    col.append(&item("Refresh tags", Action::UpdateDb(a.folder.clone())));
+    col.append(&item(
+        "Retry cover art",
+        Action::RetryCover(a.folder.clone()),
+    ));
+    if ctx.music_dir.is_some() {
+        col.append(&item("Open folder", Action::OpenFolder(a.folder.clone())));
+    }
+    pop.set_child(Some(&col));
+    gtk::MenuButton::builder()
+        .icon_name("view-more-symbolic")
+        .tooltip_text(tr("More"))
+        .popover(&pop)
+        .css_classes(["circular"])
+        .build()
+}
+
+/// Cover, or a carousel of every local image when there are several.
+fn artwork(ctx: &Rc<Ctx>, a: &Album) -> gtk::Widget {
+    let size = 240;
+    let Some(dir) = ctx.local_path(&a.folder) else {
+        return ui::cover(ctx, a, size).upcast();
+    };
+    let carousel = adw::Carousel::builder()
+        .width_request(size)
+        .height_request(size)
+        .allow_scroll_wheel(false)
+        .build();
+    let dots = adw::CarouselIndicatorDots::builder()
+        .carousel(&carousel)
+        .build();
+    let col = ui::vbox(4);
+    col.set_valign(gtk::Align::Start);
+    col.append(&ui::cover(ctx, a, size));
+    let (col2, car, dots2) = (col.clone(), carousel.clone(), dots.clone());
+    relm4::spawn_local(async move {
+        let images = relm4::gtk::gio::spawn_blocking(move || all_artwork(&dir))
+            .await
+            .unwrap_or_default();
+        if images.len() < 2 {
+            return;
+        }
+        // Replace the single cover by the carousel.
+        while let Some(ch) = col2.first_child() {
+            col2.remove(&ch);
+        }
+        col2.append(&car);
+        col2.append(&dots2);
+        for path in images {
+            let pic = gtk::Picture::builder()
+                .content_fit(gtk::ContentFit::Contain)
+                .width_request(size)
+                .height_request(size)
+                .tooltip_text(
+                    path.file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default(),
+                )
+                .build();
+            car.append(&pic);
+            let p = pic.clone();
+            relm4::spawn_local(async move {
+                if let Some(t) = load_file_texture(path, 600).await {
+                    p.set_paintable(Some(&t));
+                }
+            });
+        }
+    });
+    col.upcast()
+}
+
+fn editions_list(ctx: &Rc<Ctx>, editions: &[u32]) -> gtk::ListBox {
+    let lib = ctx.lib();
+    let list = gtk::ListBox::builder()
+        .selection_mode(gtk::SelectionMode::None)
+        .css_classes(["boxed-list"])
+        .build();
+    let mut folders = Vec::new();
+    for &i in editions {
+        let a = lib.album(i);
+        let row = ui::hbox(12);
+        row.set_margin_top(6);
+        row.set_margin_bottom(6);
+        row.set_margin_start(8);
+        row.set_margin_end(8);
+        row.append(&ui::cover(ctx, a, 40));
+        let text = ui::vbox(2);
+        text.set_hexpand(true);
+        text.set_valign(gtk::Align::Center);
+        text.append(&ui::ellipsized(&a.title, &["heading"]));
+        let sub = [
+            a.date.clone().unwrap_or_default(),
+            a.label.clone().unwrap_or_default(),
+            format!("{} {}", a.tracks.len(), tr("tracks")),
+        ]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ");
+        text.append(&ui::ellipsized(&sub, &["dim-label", "caption"]));
+        row.append(&text);
+        row.append(&ui::format_badge(&a.format()));
+        let (c, f) = (ctx.clone(), a.folder.clone());
+        row.append(&ui::icon_button(
+            "media-playback-start-symbolic",
+            "Play",
+            move || c.act(Action::PlayAlbum(f.clone())),
+        ));
+        let (c, f) = (ctx.clone(), a.folder.clone());
+        row.append(&ui::icon_button(
+            "list-add-symbolic",
+            "Add to queue",
+            move || c.act(Action::EnqueueAlbum(f.clone())),
+        ));
+        list.append(&row);
+        folders.push(a.folder.clone());
+    }
+    let c = ctx.clone();
+    list.connect_row_activated(move |_, row| {
+        if let Some(f) = folders.get(row.index() as usize) {
+            c.act(Action::Open(Route::Album(f.clone())));
+        }
+    });
+    list
+}
+
+/// One track in an album's list.
+pub fn track_row(ctx: &Rc<Ctx>, r: TrackRef, album_artist: &str) -> gtk::Box {
+    let lib = ctx.lib();
+    let song = lib.song(r);
+    let current = ctx.is_current(&song.file);
+
+    let row = ui::hbox(8);
+    row.set_margin_top(4);
+    row.set_margin_bottom(4);
+    row.set_margin_start(6);
+    row.set_margin_end(6);
+    if current {
+        row.add_css_class("current-track");
+    }
+
+    let (c, f) = (ctx.clone(), song.file.clone());
+    let play = ui::icon_button(
+        if current {
+            "audio-speakers-symbolic"
+        } else {
+            "media-playback-start-symbolic"
+        },
+        "Play",
+        move || c.act(Action::PlayFile(f.clone())),
+    );
+    if current {
+        play.add_css_class("accent");
+    }
+    row.append(&play);
+
+    let number = song
+        .track()
+        .map(|t| t.split('/').next().unwrap_or(t).to_owned())
+        .unwrap_or_else(|| (r.track + 1).to_string());
+    row.append(
+        &gtk::Label::builder()
+            .label(number)
+            .width_chars(3)
+            .xalign(1.0)
+            .css_classes(["dim-label", "numeric"])
+            .build(),
+    );
+
+    let text = ui::vbox(0);
+    text.set_hexpand(true);
+    text.set_valign(gtk::Align::Center);
+    text.append(&ui::ellipsized(
+        song.display_title(),
+        if current { &["heading"] } else { &[] },
+    ));
+    if let Some(a) = song.artist().filter(|a| *a != album_artist) {
+        text.append(&ui::ellipsized(a, &["dim-label", "caption"]));
+    }
+    row.append(&text);
+
+    let versions = lib.version_count(r);
+    if versions > 0 {
+        let pop = gtk::Popover::new();
+        let (c, p) = (ctx.clone(), pop.clone());
+        pop.connect_show(move |_| p.set_child(Some(&versions_popover(&c, r, &p))));
+        let mb = gtk::MenuButton::builder()
+            .popover(&pop)
+            .valign(gtk::Align::Center)
+            .tooltip_text(tr("Compare versions"))
+            .css_classes(["flat", "versions-button"])
+            .build();
+        let inner = ui::hbox(4);
+        inner.append(&gtk::Image::from_icon_name("edit-copy-symbolic"));
+        inner.append(&gtk::Label::new(Some(&versions.to_string())));
+        mb.set_child(Some(&inner));
+        row.append(&mb);
+    }
+
+    let (c, f) = (ctx.clone(), song.file.clone());
+    row.append(&ui::icon_button(
+        "list-add-symbolic",
+        "Add to queue",
+        move || c.act(Action::EnqueueFile(f.clone())),
+    ));
+    row.append(&ui::stars(ctx, &song.file));
+    row.append(
+        &gtk::Label::builder()
+            .label(song.duration.map(ui::mmss).unwrap_or_default())
+            .width_chars(5)
+            .xalign(1.0)
+            .css_classes(["dim-label", "numeric"])
+            .build(),
+    );
+    row
+}
+
+/// "Compare versions": every version of a track, best first.
+fn versions_popover(ctx: &Rc<Ctx>, r: TrackRef, pop: &gtk::Popover) -> gtk::Widget {
+    let lib = ctx.lib();
+    let refs = lib.versions(r).to_vec();
+    let items: Vec<(Option<i32>, String)> = refs
+        .iter()
+        .map(|v| (None, lib.album(v.album).format()))
+        .collect();
+    let ranked = quality::rank(
+        &items
+            .iter()
+            .map(|(d, f)| (*d, f.as_str()))
+            .collect::<Vec<_>>(),
+    );
+    let preferred = ctx.preferred.borrow();
+
+    let col = ui::vbox(6);
+    col.set_margin_top(6);
+    col.set_margin_bottom(6);
+    col.set_margin_start(6);
+    col.set_margin_end(6);
+    col.append(&ui::label(&tr("Compare versions"), &["heading"]));
+    let list = gtk::ListBox::builder()
+        .selection_mode(gtk::SelectionMode::None)
+        .css_classes(["boxed-list"])
+        .build();
+    for (i, score) in ranked {
+        let v = refs[i];
+        let a = lib.album(v.album);
+        let s = lib.song(v);
+        let row = ui::hbox(8);
+        row.set_margin_top(4);
+        row.set_margin_bottom(4);
+        row.set_margin_start(6);
+        row.set_margin_end(6);
+        match score.badge {
+            Badge::Best => row.add_css_class("row-best"),
+            Badge::Warning => row.add_css_class("row-warning"),
+            Badge::Good => {}
+        }
+        let (c, f) = (ctx.clone(), s.file.clone());
+        row.append(&ui::icon_button(
+            "media-playback-start-symbolic",
+            "Play",
+            move || c.act(Action::PlayFile(f.clone())),
+        ));
+        let (c, fo, p) = (ctx.clone(), a.folder.clone(), pop.clone());
+        let title = ui::link(
+            &a.title,
+            if score.badge == Badge::Best {
+                &["heading"]
+            } else {
+                &[]
+            },
+            move || {
+                p.popdown();
+                c.act(Action::Open(Route::Album(fo.clone())))
+            },
+        );
+        title.set_hexpand(true);
+        row.append(&title);
+        if score.badge == Badge::Best {
+            row.append(&ui::badge(&tr("BEST"), "badge-best"));
+        }
+        if preferred.contains(&s.file) {
+            row.append(&ui::badge(&tr("PREFERRED"), "badge-preferred"));
+        }
+        if v == r {
+            row.append(&ui::badge(&tr("CURRENT"), "badge-current"));
+        }
+        row.append(&ui::format_badge(&a.format()));
+        if let Some(d) = &a.date {
+            row.append(&ui::label(d, &["dim-label", "caption"]));
+        }
+        row.append(&ui::label(
+            &format!("{}pts", score.total),
+            &["dim-label", "caption", "numeric"],
+        ));
+        let (c, f, p) = (ctx.clone(), s.file.clone(), pop.clone());
+        row.append(&ui::icon_button(
+            "emblem-ok-symbolic",
+            "Set as preferred version",
+            move || {
+                p.popdown();
+                c.act(Action::SetPreferred(f.clone()))
+            },
+        ));
+        list.append(&row);
+    }
+    col.append(&list);
+    col.upcast()
+}

@@ -46,6 +46,11 @@ impl CoverLoader {
         self.cache.borrow().get(folder).cloned()
     }
 
+    /// Forget a cached cover so the next request loads it again.
+    pub fn invalidate(&self, folder: &str) {
+        self.cache.borrow_mut().remove(folder);
+    }
+
     /// Get the cover, calling `cb` on the main thread (immediately if cached).
     pub fn request(
         self: &Rc<Self>,
@@ -129,19 +134,34 @@ fn decode(bytes: Vec<u8>, size: i32) -> Option<gdk::Texture> {
     let pb =
         gdk_pixbuf::Pixbuf::from_stream_at_scale(&stream, size, size, true, gio::Cancellable::NONE)
             .ok()?;
+    Some(to_texture(&pb))
+}
+
+/// Load a local image scaled to fit `size`, off the main thread.
+pub async fn load_file_texture(path: PathBuf, size: i32) -> Option<gdk::Texture> {
+    gio::spawn_blocking(move || {
+        let pb = gdk_pixbuf::Pixbuf::from_file_at_scale(&path, size, size, true).ok()?;
+        Some(to_texture(&pb))
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+fn to_texture(pb: &gdk_pixbuf::Pixbuf) -> gdk::Texture {
     let format = if pb.has_alpha() {
         gdk::MemoryFormat::R8g8b8a8
     } else {
         gdk::MemoryFormat::R8g8b8
     };
-    let texture = gdk::MemoryTexture::new(
+    gdk::MemoryTexture::new(
         pb.width(),
         pb.height(),
         format,
         &pb.read_pixel_bytes(),
         pb.rowstride() as usize,
-    );
-    Some(texture.upcast())
+    )
+    .upcast()
 }
 
 use gtk::prelude::Cast;

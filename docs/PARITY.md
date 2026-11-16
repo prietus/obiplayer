@@ -68,7 +68,7 @@ Inventario detallado (checklists con referencias `Fichero.swift:línea` al origi
 
 1. ~~**core: MPD**~~ ✅ — cliente, parsers, stickers, outputs, `idle`; tests con servidor MPD simulado.
 2. ~~**App mínima**~~ ✅ — ventana (Relm4), barra de reproducción, transporte, cola, grid de álbumes; portadas locales o vía MPD (`albumart`/`readpicture`). Temporal: clic en álbum = reproducir (el detalle llega en la fase 3).
-3. **Biblioteca** — detalle de álbum, pistas, ratings, versiones, búsqueda, modos de navegación.
+3. **Biblioteca** (en curso) — hecho: detalle de álbum (cabecera, datos, géneros, carrusel local, otras ediciones, pistas con valoración y versiones), detalle de pista (ffprobe si hay `music_dir`), artistas/sellos/compositores (listas + detalle), vista de pistas ordenable, búsqueda (Ctrl+F), filtros del grid, versión preferida (stickers). Pendiente de verificar contra MPD real.
 4. **Análisis** — DR14, waveform, ffprobe, visualizadores (FIFO), signal path.
 5. **Metadatos** — MB, Discogs, Wikipedia, Last.fm, LRCLIB, Loudness War, géneros, avatares, portadas online, cachés.
 6. **Funciones avanzadas** — ediciones, productores, smart playlists, radio, estadísticas, Home.

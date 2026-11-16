@@ -125,6 +125,42 @@ pub fn find_cover(album_dir: &Path) -> Option<PathBuf> {
     None
 }
 
+/// Every image belonging to an album: the folder itself, its art
+/// sub-folders and, for disc folders, the parent release folder.
+pub fn all_artwork(album_dir: &Path) -> Vec<PathBuf> {
+    let dir = std::fs::canonicalize(album_dir).unwrap_or_else(|_| album_dir.to_owned());
+    let mut dirs = vec![dir.clone()];
+    if is_disc_folder(&dir)
+        && let Some(p) = dir.parent()
+    {
+        dirs.push(p.to_owned());
+    }
+    let mut out = Vec::new();
+    for d in dirs {
+        out.extend(images_in(&d));
+        for sub in ["Art", "Artwork", "Covers", "Scans"] {
+            for name in [sub.to_owned(), sub.to_lowercase()] {
+                let sd = d.join(&name);
+                if sd.is_dir() {
+                    for img in images_in(&sd) {
+                        if !out.contains(&img) {
+                            out.push(img);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Put the cover first.
+    if let Some(c) = find_cover(&dir)
+        && let Some(i) = out.iter().position(|p| *p == c)
+    {
+        let c = out.remove(i);
+        out.insert(0, c);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
