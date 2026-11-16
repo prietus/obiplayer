@@ -55,9 +55,12 @@
 
 ## Install
 
-**Arch Linux**
+**Arch Linux** — from the AUR ([`obiplayer-git`](https://aur.archlinux.org/packages/obiplayer-git)) with your AUR helper,
+e.g. [aurgus](https://github.com/prietus/aurgus), yay or paru:
 ```sh
-git clone https://github.com/prietus/obiplayer && cd obiplayer/packaging/arch && makepkg -si
+aurgus -S obiplayer-git
+yay -S obiplayer-git
+paru -S obiplayer-git
 ```
 
 **From source** — Rust (stable), GTK ≥ 4.12, libadwaita ≥ 1.5, ffmpeg:
