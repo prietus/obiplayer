@@ -88,6 +88,7 @@ pub struct App {
     lyrics: Rc<crate::lyrics_ui::LyricsView>,
     lyrics_shown: bool,
     mpris: crate::mpris::Mpris,
+    tray: crate::tray::Tray,
     tasks: crate::tasks_ui::TasksState,
     extra_genres: Rc<RefCell<HashMap<String, Vec<String>>>>,
     enrich_started: bool,
@@ -108,6 +109,8 @@ pub enum AppMsg {
     Tick,
     /// Media keys / desktop widget (D-Bus MPRIS).
     Mpris(crate::mpris::MprisCommand),
+    /// System tray icon and its menu.
+    Tray(crate::tray::TrayCommand),
     /// Genre enrichment progress: (folder, new genres, done, total).
     Genres(String, Vec<String>, usize, usize),
     ReloadLibrary,
@@ -820,7 +823,7 @@ impl App {
     }
 }
 
-/// Primary menu: Preferences, setup assistant, About.
+/// Primary menu: Preferences, setup assistant, About, Quit.
 fn main_menu(root: &adw::ApplicationWindow, ctx: &Rc<Ctx>) -> gtk::MenuButton {
     let pop = gtk::Popover::new();
     let col = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -866,6 +869,10 @@ fn main_menu(root: &adw::ApplicationWindow, ctx: &Rc<Ctx>) -> gtk::MenuButton {
                 .build()
                 .present(Some(&r));
         }),
+    ));
+    col.append(&item(
+        &tr("Quit"),
+        Box::new(|| relm4::main_application().quit()),
     ));
     pop.set_child(Some(&col));
     gtk::MenuButton::builder()
@@ -1286,7 +1293,35 @@ impl Component for App {
                 })),
             ));
         }
+        {
+            shortcuts.add_shortcut(gtk::Shortcut::new(
+                gtk::ShortcutTrigger::parse_string("<Control>q"),
+                Some(gtk::CallbackAction::new(move |_, _| {
+                    relm4::main_application().quit();
+                    glib::Propagation::Stop
+                })),
+            ));
+        }
         root.add_controller(shortcuts);
+
+        // -- Tray icon: closing the window hides it while a tray host shows us --------------
+        let tray = {
+            let s = sender.clone();
+            crate::tray::Tray::start(move |cmd| s.input(AppMsg::Tray(cmd)))
+        };
+        {
+            let t = tray.clone();
+            root.connect_close_request(move |w| {
+                if t.closes_to_tray() {
+                    w.set_visible(false);
+                    glib::Propagation::Stop
+                } else {
+                    glib::Propagation::Proceed
+                }
+            });
+            let t = tray.clone();
+            root.connect_visible_notify(move |w| t.set_window_visible(w.is_visible()));
+        }
         if first_run {
             let r = root.clone();
             glib::idle_add_local_once(move || crate::wizard::show(&r));
@@ -1346,6 +1381,7 @@ impl Component for App {
                 let s = sender.clone();
                 crate::mpris::Mpris::start(move |cmd| s.input(AppMsg::Mpris(cmd)))
             },
+            tray,
             tasks: Default::default(),
             extra_genres,
             enrich_started: false,
@@ -1466,6 +1502,30 @@ impl Component for App {
             }
             AppMsg::ClearQueue => self.run(&sender, |c| async move { c.clear().await }),
             AppMsg::Tick => self.count_play(&sender),
+            AppMsg::Tray(cmd) => {
+                use crate::tray::TrayCommand as T;
+                let window = self.nav.root().and_downcast::<gtk::Window>();
+                match cmd {
+                    T::ToggleWindow => {
+                        if let Some(w) = window {
+                            if w.is_visible() {
+                                w.set_visible(false);
+                            } else {
+                                w.present();
+                            }
+                        }
+                    }
+                    T::ShowWindow => {
+                        if let Some(w) = window.filter(|w| !w.is_visible()) {
+                            w.present();
+                        }
+                    }
+                    T::PlayPause => sender.input(AppMsg::Transport(Transport::TogglePause)),
+                    T::Next => sender.input(AppMsg::Transport(Transport::Next)),
+                    T::Previous => sender.input(AppMsg::Transport(Transport::Previous)),
+                    T::Quit => relm4::main_application().quit(),
+                }
+            }
             AppMsg::Mpris(cmd) => {
                 use crate::mpris::MprisCommand as M;
                 let st = self.status.clone();
@@ -1577,6 +1637,7 @@ impl Component for App {
                 self.update_current();
                 self.push_bar();
                 self.push_mpris();
+                self.tray.update(&self.status, self.song.as_ref());
                 let jumped = old_file != self.song.as_ref().map(|s| s.file.clone());
                 if jumped {
                     self.mpris.seeked(self.status.elapsed.unwrap_or(0.0));

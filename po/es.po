@@ -1298,3 +1298,21 @@ msgstr "¿está montada? La necesitan el DR, las ondas, los visualizadores y las
 
 msgid "Music folder not mounted"
 msgstr "Carpeta de música sin montar"
+
+msgid "Close to tray"
+msgstr "Cerrar a la bandeja"
+
+msgid "Closing the window keeps ObiPlayer running in the system tray, when the desktop has one"
+msgstr "Al cerrar la ventana, ObiPlayer sigue en la bandeja del sistema, si el escritorio tiene una"
+
+msgid "Hide ObiPlayer"
+msgstr "Ocultar ObiPlayer"
+
+msgid "Show ObiPlayer"
+msgstr "Mostrar ObiPlayer"
+
+msgid "Pause"
+msgstr "Pausa"
+
+msgid "Quit"
+msgstr "Salir"

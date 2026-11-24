@@ -739,6 +739,22 @@ fn appearance_page(st: &Rc<State>) -> adw::PreferencesPage {
     g.add(&scheme);
     g.add(&theme);
     g.add(&lang);
+    let tray = adw::SwitchRow::builder()
+        .title(tr("Close to tray"))
+        .subtitle(tr(
+            "Closing the window keeps ObiPlayer running in the system tray, when the desktop has one",
+        ))
+        .active(cfg.close_to_tray)
+        .build();
+    {
+        let s = st.clone();
+        tray.connect_active_notify(move |r| {
+            s.config.borrow_mut().ui.close_to_tray = r.is_active();
+            crate::tray::set_close_to_tray(r.is_active());
+            s.save(false);
+        });
+    }
+    g.add(&tray);
     page.add(&g);
     page
 }

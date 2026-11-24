@@ -15,6 +15,7 @@ finish-args:
   - --socket=fallback-x11
   - --device=dri
   - --own-name=org.mpris.MediaPlayer2.obiplayer
+  - --talk-name=org.kde.StatusNotifierWatcher   # tray icon
   - --filesystem=home:ro       # local music folder / mounts
   - --filesystem=/mnt:ro
   - --filesystem=/media:ro

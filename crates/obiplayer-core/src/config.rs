@@ -25,6 +25,9 @@ pub struct UiConfig {
     pub color_scheme: String,
     /// "system" (follow the locale), "en", "es".
     pub language: String,
+    /// Closing the window keeps the app running in the system tray (only
+    /// while a tray host is showing the icon).
+    pub close_to_tray: bool,
 }
 
 impl Default for UiConfig {
@@ -33,6 +36,7 @@ impl Default for UiConfig {
             theme: "System".into(),
             color_scheme: "system".into(),
             language: "system".into(),
+            close_to_tray: true,
         }
     }
 }

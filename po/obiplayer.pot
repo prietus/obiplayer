@@ -238,6 +238,14 @@ msgstr ""
 msgid "Close (Esc)"
 msgstr ""
 
+#: settings.rs
+msgid "Close to tray"
+msgstr ""
+
+#: settings.rs
+msgid "Closing the window keeps ObiPlayer running in the system tray, when the desktop has one"
+msgstr ""
+
 #: track.rs
 msgid "Codec"
 msgstr ""
@@ -448,6 +456,10 @@ msgstr ""
 
 #: albuminfo.rs
 msgid "Genres"
+msgstr ""
+
+#: tray.rs
+msgid "Hide ObiPlayer"
 msgstr ""
 
 #: app.rs
@@ -846,6 +858,10 @@ msgstr ""
 msgid "Path"
 msgstr ""
 
+#: tray.rs
+msgid "Pause"
+msgstr ""
+
 #: stats.rs
 msgid "Peak listening:"
 msgstr ""
@@ -944,6 +960,10 @@ msgstr ""
 
 #: app.rs
 msgid "Queue"
+msgstr ""
+
+#: app.rs
+msgid "Quit"
 msgstr ""
 
 #: player_bar.rs
@@ -1084,6 +1104,10 @@ msgstr ""
 
 #: player_bar.rs
 msgid "Show album"
+msgstr ""
+
+#: tray.rs
+msgid "Show ObiPlayer"
 msgstr ""
 
 #: nowplaying.rs

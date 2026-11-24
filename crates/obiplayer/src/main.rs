@@ -15,6 +15,7 @@ mod settings;
 mod signal_ui;
 mod tasks_ui;
 mod theme;
+mod tray;
 mod ui;
 mod viz;
 mod wizard;
@@ -133,6 +134,7 @@ fn main() {
     let first_run = !Config::exists();
     let config = Config::load_or_default();
     i18n::init(&config.ui.language);
+    tray::set_close_to_tray(config.ui.close_to_tray);
     let app = RelmApp::new(APP_ID);
     relm4::set_global_css(CSS);
     let ui = config.ui.clone();

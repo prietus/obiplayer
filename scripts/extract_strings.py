@@ -20,6 +20,8 @@ PATTERNS = [
 ]
 found = {}
 for f in sorted(SRC.rglob("*.rs")):
+    if f.name.startswith("._"):  # macOS AppleDouble leftovers from tar
+        continue
     text = f.read_text()
     for p in PATTERNS:
         for m in re.finditer(p, text):
